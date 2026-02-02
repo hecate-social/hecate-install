@@ -109,65 +109,22 @@ check_dependencies() {
 }
 
 # -----------------------------------------------------------------------------
-# Runtime Installation (Erlang + Elixir via mise/asdf)
+# Runtime Installation (Erlang + Elixir - optional, for development)
 # -----------------------------------------------------------------------------
 
-install_runtime() {
-    info "Checking BEAM runtime (Erlang/Elixir)..."
+check_dev_runtime() {
+    # The daemon binary includes bundled ERTS, so Erlang is NOT required to run it.
+    # However, Erlang/Elixir are useful for developing agents.
 
-    # Check if Erlang 27+ is available
-    if command_exists erl; then
-        local erl_version
-        erl_version=$(erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell 2>/dev/null | tr -d '"')
-        if [ "$erl_version" -ge 27 ] 2>/dev/null; then
-            ok "Erlang OTP $erl_version found"
-        else
-            warn "Erlang OTP $erl_version found, but OTP 27+ recommended"
-        fi
+    if command_exists erl && command_exists elixir; then
+        ok "BEAM development runtime found (optional)"
     else
-        warn "Erlang not found"
-        install_runtime_via_mise
-    fi
-
-    # Check if Elixir is available
-    if command_exists elixir; then
-        local ex_version
-        ex_version=$(elixir --version | grep "Elixir" | awk '{print $2}')
-        ok "Elixir $ex_version found"
-    else
-        warn "Elixir not found"
-        install_runtime_via_mise
-    fi
-}
-
-install_runtime_via_mise() {
-    if command_exists mise; then
-        info "Installing Erlang and Elixir via mise..."
-        mise install erlang@27
-        mise install elixir@1.18
-        mise use -g erlang@27 elixir@1.18
-        ok "BEAM runtime installed via mise"
-    elif command_exists asdf; then
-        info "Installing Erlang and Elixir via asdf..."
-        asdf plugin add erlang 2>/dev/null || true
-        asdf plugin add elixir 2>/dev/null || true
-        asdf install erlang 27.0
-        asdf install elixir 1.18.0-otp-27
-        asdf global erlang 27.0
-        asdf global elixir 1.18.0-otp-27
-        ok "BEAM runtime installed via asdf"
-    else
-        warn "Neither mise nor asdf found"
+        info "BEAM runtime not found (Erlang/Elixir)"
+        info "This is optional - the daemon includes bundled runtime."
+        info "Install Erlang/Elixir if you want to develop agents:"
         echo ""
-        echo "Please install Erlang OTP 27+ and Elixir 1.18+ manually."
-        echo ""
-        echo "Recommended: Install mise (https://mise.jdx.dev)"
         echo "  curl https://mise.jdx.dev/install.sh | sh"
         echo "  mise install erlang@27 elixir@1.18"
-        echo ""
-        echo "Or install via your package manager:"
-        echo "  macOS:  brew install erlang elixir"
-        echo "  Ubuntu: See https://www.erlang.org/downloads"
         echo ""
     fi
 }
@@ -189,16 +146,12 @@ install_daemon() {
         version="$HECATE_VERSION"
     fi
 
-    url="${REPO_BASE}/hecate-daemon/releases/download/${version}/hecate-${os}-${arch}.tar.gz"
+    # Download self-extracting executable (includes bundled Erlang runtime)
+    url="${REPO_BASE}/hecate-daemon/releases/download/${version}/hecate-daemon-${os}-${arch}"
 
     mkdir -p "$BIN_DIR"
-    local tmpfile
-    tmpfile=$(mktemp)
 
-    download_file "$url" "$tmpfile"
-    tar -xzf "$tmpfile" -C "$BIN_DIR"
-    rm -f "$tmpfile"
-
+    download_file "$url" "${BIN_DIR}/hecate"
     chmod +x "${BIN_DIR}/hecate"
 
     ok "Hecate Daemon ${version} installed to ${BIN_DIR}/hecate"
@@ -344,9 +297,9 @@ main() {
     info "  Version:     ${HECATE_VERSION}"
     echo ""
 
-    install_runtime
     setup_data_dir
     install_daemon
+    check_dev_runtime
     install_tui
     install_skills
     setup_path
