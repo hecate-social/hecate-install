@@ -189,7 +189,7 @@ install_daemon() {
         version="$HECATE_VERSION"
     fi
 
-    url="${REPO_BASE}/hecate-daemon/releases/download/${version}/hecate-daemon-${os}-${arch}.tar.gz"
+    url="${REPO_BASE}/hecate-daemon/releases/download/${version}/hecate-${os}-${arch}.tar.gz"
 
     mkdir -p "$BIN_DIR"
     local tmpfile
