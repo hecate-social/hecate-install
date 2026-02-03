@@ -37,16 +37,11 @@ confirm() {
     [[ "$response" =~ ^[Yy] ]]
 }
 
-echo -e "${RED}${BOLD}"
-cat << 'EOF'
-    __  __              __
-   / / / /__  _______ _/ /____
-  / /_/ / _ \/ __/ _ `/ __/ -_)
- /_//_/\___/\__/\_,_/\__/\__/
-
-EOF
-echo -e "${NC}"
+echo ""
+echo -e "${RED}${BOLD}    🗝️  H E C A T E  🗝️${NC}"
+echo ""
 echo -e "${BOLD}Hecate Node Uninstaller${NC}"
+echo -e "${DIM}The goddess prepares to depart...${NC}"
 echo ""
 
 section "Detecting Installation"
@@ -156,10 +151,10 @@ echo -e "  ${CYAN}docker rmi containrrr/watchtower${NC}"
 echo ""
 echo "Docker itself was NOT removed."
 
-section "Uninstall Complete"
+section "🔥🗝️🔥 Uninstall Complete"
 
-echo -e "${GREEN}${BOLD}Hecate has been uninstalled.${NC}"
+echo -e "${DIM}The goddess has departed. The crossroads await her return.${NC}"
 echo ""
-echo "To reinstall:"
+echo "To summon her again:"
 echo -e "  ${CYAN}curl -fsSL https://macula.io/hecate/install.sh | bash${NC}"
 echo ""
