@@ -107,6 +107,29 @@ if [ "$FOUND_TUI" = true ]; then
     ok "Removed ${BIN_DIR}/hecate-tui"
 fi
 
+# Clean shell profiles (PATH entries added by installer)
+section "Shell Profiles"
+
+CLEANED_PROFILES=false
+for profile in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+    if [ -f "$profile" ] && grep -q "# Hecate CLI" "$profile"; then
+        # Use different sed syntax for macOS vs Linux
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' '/# Hecate CLI/d' "$profile" 2>/dev/null || true
+            sed -i '' '/\.local\/bin.*hecate/d' "$profile" 2>/dev/null || true
+        else
+            sed -i '/# Hecate CLI/d' "$profile" 2>/dev/null || true
+            sed -i '/\.local\/bin.*hecate/d' "$profile" 2>/dev/null || true
+        fi
+        ok "Cleaned PATH entries from $profile"
+        CLEANED_PROFILES=true
+    fi
+done
+
+if [ "$CLEANED_PROFILES" = false ]; then
+    echo "No Hecate PATH entries found in shell profiles"
+fi
+
 # Remove data directory
 section "Data Directory"
 
