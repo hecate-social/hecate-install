@@ -1,6 +1,13 @@
-# Hecate Node
+<div align="center">
+  <img src="assets/avatar-terminal.jpg" alt="Hecate" width="200"/>
+  <h1>Hecate Node</h1>
+  <p><em>One-command installer for the complete Hecate stack with intelligent hardware detection and role-based setup.</em></p>
 
-One-command installer for the complete Hecate stack with intelligent hardware detection and role-based setup.
+  [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/rgfaber)
+  [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+</div>
+
+---
 
 ## Quick Install
 
@@ -72,6 +79,10 @@ curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=services,ai
 ```bash
 curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=full
 ```
+
+## Installation Flow
+
+![Install Flow](assets/install-flow.svg)
 
 ## Features
 
@@ -246,4 +257,4 @@ Apache 2.0 - See [LICENSE](LICENSE)
 ## Support
 
 - [Issues](https://github.com/hecate-social/hecate-node/issues)
-- [Buy Me a Coffee](https://buymeacoffee.com/rlefever)
+- [Buy Me a Coffee](https://buymeacoffee.com/rgfaber)
