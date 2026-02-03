@@ -151,6 +151,62 @@ echo -e "  ${CYAN}docker rmi containrrr/watchtower${NC}"
 echo ""
 echo "Docker itself was NOT removed."
 
+# Ollama cleanup
+section "Ollama (LLM Backend)"
+
+OLLAMA_MODELS_DIR="${HOME}/.ollama"
+OLLAMA_MODELS_SIZE=""
+
+if [ -d "$OLLAMA_MODELS_DIR" ]; then
+    OLLAMA_MODELS_SIZE=$(du -sh "$OLLAMA_MODELS_DIR" 2>/dev/null | cut -f1 || echo "unknown")
+fi
+
+if command -v ollama &>/dev/null || [ -d "$OLLAMA_MODELS_DIR" ]; then
+    echo "Ollama was installed for LLM features."
+    if [ -n "$OLLAMA_MODELS_SIZE" ]; then
+        echo -e "Downloaded models: ${YELLOW}${OLLAMA_MODELS_SIZE}${NC} in ${OLLAMA_MODELS_DIR}"
+    fi
+    echo ""
+    
+    if confirm "Remove Ollama and downloaded models?"; then
+        # Stop Ollama service if running
+        if command -v systemctl &>/dev/null && systemctl is-active --quiet ollama 2>/dev/null; then
+            info "Stopping Ollama service..."
+            sudo systemctl stop ollama 2>/dev/null || true
+            sudo systemctl disable ollama 2>/dev/null || true
+        fi
+        
+        # Kill any running ollama process
+        pkill -f ollama 2>/dev/null || true
+        
+        # Remove Ollama binary
+        if [ -f /usr/local/bin/ollama ]; then
+            sudo rm -f /usr/local/bin/ollama
+            ok "Removed /usr/local/bin/ollama"
+        fi
+        
+        # Remove Ollama service file
+        if [ -f /etc/systemd/system/ollama.service ]; then
+            sudo rm -f /etc/systemd/system/ollama.service
+            sudo systemctl daemon-reload 2>/dev/null || true
+            ok "Removed Ollama systemd service"
+        fi
+        
+        # Remove models directory
+        if [ -d "$OLLAMA_MODELS_DIR" ]; then
+            rm -rf "$OLLAMA_MODELS_DIR"
+            ok "Removed ${OLLAMA_MODELS_DIR} (${OLLAMA_MODELS_SIZE} freed)"
+        fi
+    else
+        warn "Kept Ollama installation"
+        echo "To remove manually later:"
+        echo -e "  ${CYAN}sudo rm /usr/local/bin/ollama${NC}"
+        echo -e "  ${CYAN}rm -rf ~/.ollama${NC}"
+    fi
+else
+    echo "Ollama not found (not installed or already removed)"
+fi
+
 section "🔥🗝️🔥 Uninstall Complete"
 
 echo -e "${DIM}The goddess has departed. The crossroads await her return.${NC}"
