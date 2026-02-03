@@ -25,6 +25,7 @@ HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:main"
 
 # Flags
 HEADLESS=false
+PAIRING_SUCCESS=false
 
 # Colors
 if [ -t 1 ]; then
@@ -389,6 +390,68 @@ case "${1:-help}" in
     health)
         curl -s http://localhost:4444/health | jq . 2>/dev/null || curl -s http://localhost:4444/health
         ;;
+    identity)
+        curl -s http://localhost:4444/api/identity | jq . 2>/dev/null || curl -s http://localhost:4444/api/identity
+        ;;
+    pair)
+        echo "Starting pairing..."
+        result=$(curl -s -X POST http://localhost:4444/api/pairing/start)
+        
+        if echo "$result" | grep -q '"ok":false'; then
+            echo "Pairing failed:"
+            echo "$result" | jq . 2>/dev/null || echo "$result"
+            exit 1
+        fi
+        
+        code=$(echo "$result" | jq -r '.confirm_code')
+        url=$(echo "$result" | jq -r '.pairing_url')
+        
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "  Confirmation code:  $code"
+        echo ""
+        echo "  Open this URL to confirm:"
+        echo "  $url"
+        echo ""
+        
+        # Generate QR code if qrencode is available
+        if command -v qrencode &>/dev/null; then
+            echo "  Or scan this QR code:"
+            echo ""
+            qrencode -t ANSIUTF8 -m 2 "$url"
+        fi
+        
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "Waiting for confirmation..."
+        
+        while true; do
+            status_result=$(curl -s http://localhost:4444/api/pairing/status)
+            status=$(echo "$status_result" | jq -r '.status')
+            
+            case "$status" in
+                paired)
+                    echo ""
+                    echo "✓ Paired successfully!"
+                    echo ""
+                    curl -s http://localhost:4444/api/identity | jq . 2>/dev/null
+                    exit 0
+                    ;;
+                failed|expired)
+                    echo ""
+                    echo "✗ Pairing failed or expired"
+                    exit 1
+                    ;;
+                *)
+                    # Still waiting
+                    printf "."
+                    sleep 2
+                    ;;
+            esac
+        done
+        ;;
     *)
         echo "Hecate - Mesh networking for AI agents"
         echo ""
@@ -403,6 +466,8 @@ case "${1:-help}" in
         echo "  update    Pull latest image and restart"
         echo "  config    Show configuration paths"
         echo "  health    Check daemon health"
+        echo "  identity  Show identity and pairing status"
+        echo "  pair      Start pairing flow"
         echo ""
         echo "TUI:"
         echo "  hecate-tui    Launch terminal UI"
@@ -440,6 +505,121 @@ install_skills() {
 }
 
 # -----------------------------------------------------------------------------
+# Start Daemon
+# -----------------------------------------------------------------------------
+
+start_daemon() {
+    section "Starting Hecate Daemon"
+
+    cd "${INSTALL_DIR}"
+    
+    info "Pulling latest image..."
+    docker compose pull --quiet
+    
+    info "Starting containers..."
+    docker compose up -d
+    
+    # Wait for health check
+    info "Waiting for daemon to be ready..."
+    local retries=30
+    while [ $retries -gt 0 ]; do
+        if curl -s http://localhost:4444/health &>/dev/null; then
+            ok "Daemon is running and healthy"
+            return 0
+        fi
+        retries=$((retries - 1))
+        sleep 1
+    done
+    
+    fatal "Daemon failed to start. Check logs with: hecate logs"
+}
+
+# -----------------------------------------------------------------------------
+# Pairing Flow
+# -----------------------------------------------------------------------------
+
+run_pairing() {
+    section "Pairing with Realm"
+
+    info "Starting pairing session..."
+    local result
+    result=$(curl -s -X POST http://localhost:4444/api/pairing/start)
+    
+    if echo "$result" | grep -q '"ok":false'; then
+        error "Failed to start pairing:"
+        echo "$result" | jq . 2>/dev/null || echo "$result"
+        echo ""
+        warn "You can pair later with: hecate pair"
+        return 1
+    fi
+    
+    local code url
+    code=$(echo "$result" | jq -r '.confirm_code')
+    url=$(echo "$result" | jq -r '.pairing_url')
+    
+    echo ""
+    echo -e "${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  Confirmation code:  ${BOLD}${code}${NC}"
+    echo ""
+    echo -e "  Open this URL to confirm:"
+    echo -e "  ${CYAN}${url}${NC}"
+    echo ""
+    
+    # Generate QR code if qrencode is available
+    if command -v qrencode &>/dev/null; then
+        echo "  Or scan this QR code:"
+        echo ""
+        qrencode -t ANSIUTF8 -m 2 "$url"
+        echo ""
+    fi
+    
+    echo -e "${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${DIM}Waiting for confirmation (timeout: 10 minutes)...${NC}"
+    
+    local timeout=600
+    local elapsed=0
+    
+    while [ $elapsed -lt $timeout ]; do
+        local status_result status
+        status_result=$(curl -s http://localhost:4444/api/pairing/status)
+        status=$(echo "$status_result" | jq -r '.status')
+        
+        case "$status" in
+            paired)
+                echo ""
+                ok "Paired successfully!"
+                return 0
+                ;;
+            failed)
+                echo ""
+                error "Pairing failed"
+                warn "You can try again with: hecate pair"
+                return 1
+                ;;
+            idle)
+                echo ""
+                warn "Pairing session expired"
+                warn "You can try again with: hecate pair"
+                return 1
+                ;;
+            *)
+                # Still waiting
+                printf "."
+                sleep 2
+                elapsed=$((elapsed + 2))
+                ;;
+        esac
+    done
+    
+    echo ""
+    warn "Pairing timed out"
+    warn "You can try again with: hecate pair"
+    return 1
+}
+
+# -----------------------------------------------------------------------------
 # PATH Setup
 # -----------------------------------------------------------------------------
 
@@ -469,25 +649,46 @@ show_summary() {
 
     echo -e "${GREEN}${BOLD}Hecate is ready!${NC}"
     echo ""
+    
+    # Show pairing status
+    if [ "${PAIRING_SUCCESS:-false}" = true ]; then
+        echo -e "${GREEN}✓${NC} Daemon running and ${GREEN}paired${NC}"
+        echo ""
+        # Show identity
+        local identity
+        identity=$(curl -s http://localhost:4444/api/identity 2>/dev/null)
+        if [ -n "$identity" ]; then
+            local mri org_identity
+            mri=$(echo "$identity" | jq -r '.mri // empty')
+            org_identity=$(echo "$identity" | jq -r '.org_identity // empty')
+            if [ -n "$mri" ]; then
+                echo -e "  Identity: ${BOLD}${mri}${NC}"
+            fi
+            if [ -n "$org_identity" ]; then
+                echo -e "  Org:      ${BOLD}${org_identity}${NC}"
+            fi
+            echo ""
+        fi
+    else
+        echo -e "${YELLOW}!${NC} Daemon running but ${YELLOW}not paired${NC}"
+        echo ""
+        echo "  Pair with the mesh:"
+        echo -e "     ${CYAN}hecate pair${NC}"
+        echo ""
+    fi
+    
     echo "Installed:"
     echo -e "  ${BOLD}hecate${NC}       - CLI wrapper    ${DIM}${BIN_DIR}/hecate${NC}"
     echo -e "  ${BOLD}hecate-tui${NC}   - Terminal UI    ${DIM}${BIN_DIR}/hecate-tui${NC}"
     echo -e "  ${BOLD}daemon${NC}       - Docker Compose ${DIM}${INSTALL_DIR}/docker-compose.yml${NC}"
     echo -e "  ${BOLD}skills${NC}       - Claude Code    ${DIM}~/.claude/HECATE_SKILLS.md${NC}"
     echo ""
-    echo -e "${BOLD}Quick Start:${NC}"
+    echo -e "${BOLD}Commands:${NC}"
     echo ""
-    echo "  1. Start the daemon:"
-    echo -e "     ${CYAN}hecate start${NC}"
-    echo ""
-    echo "  2. Check status:"
-    echo -e "     ${CYAN}hecate status${NC}"
-    echo ""
-    echo "  3. Open the TUI:"
-    echo -e "     ${CYAN}hecate-tui${NC}"
-    echo ""
-    echo "  4. View logs:"
-    echo -e "     ${CYAN}hecate logs${NC}"
+    echo -e "  ${CYAN}hecate status${NC}    - Check daemon status"
+    echo -e "  ${CYAN}hecate logs${NC}      - View daemon logs"
+    echo -e "  ${CYAN}hecate identity${NC}  - Show identity"
+    echo -e "  ${CYAN}hecate-tui${NC}       - Launch terminal UI"
     echo ""
     echo "API endpoint: http://localhost:4444"
     echo "Network endpoint: http://${local_ip}:4444"
@@ -554,6 +755,15 @@ main() {
     install_cli_wrapper
     install_skills
     setup_path
+    start_daemon
+    
+    # Run pairing (optional - don't fail install if pairing fails)
+    if run_pairing; then
+        PAIRING_SUCCESS=true
+    else
+        PAIRING_SUCCESS=false
+    fi
+    
     show_summary
 }
 
