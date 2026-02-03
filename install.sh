@@ -4,6 +4,7 @@
 # Usage: curl -fsSL https://hecate.social/install.sh | bash
 #
 # Options:
+#   --role=ROLE    Set node role (workstation|services|ai|full)
 #   --no-ai        Skip AI model setup
 #   --headless     Non-interactive mode (use defaults)
 #   --help         Show help
@@ -23,6 +24,10 @@ RAW_BASE="https://raw.githubusercontent.com/hecate-social/hecate-node/main"
 # Flags
 SKIP_AI=false
 HEADLESS=false
+PRESET_ROLE=""
+
+# Node role (set during selection)
+NODE_ROLE=""
 
 # Colors (disabled if not a terminal)
 if [ -t 1 ]; then
@@ -82,6 +87,19 @@ download_file() {
     curl -fsSL "$url" -o "$dest" || fatal "Failed to download: $url"
 }
 
+# Get local IP address for LAN
+get_local_ip() {
+    local os
+    os=$(detect_os)
+    if [ "$os" = "linux" ]; then
+        ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || hostname -I 2>/dev/null | awk '{print $1}' || echo "unknown"
+    elif [ "$os" = "darwin" ]; then
+        ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "unknown"
+    else
+        echo "unknown"
+    fi
+}
+
 # Prompt for yes/no
 confirm() {
     local prompt="$1"
@@ -99,6 +117,25 @@ confirm() {
     read -r response
     response="${response:-$default}"
     [[ "$response" =~ ^[Yy] ]]
+}
+
+# Prompt for text input
+prompt_input() {
+    local prompt="$1"
+    local default="${2:-}"
+
+    if [ "$HEADLESS" = true ]; then
+        echo "$default"
+        return
+    fi
+
+    if [ -n "$default" ]; then
+        echo -en "${CYAN}?${NC} ${prompt} [${default}]: "
+    else
+        echo -en "${CYAN}?${NC} ${prompt}: "
+    fi
+    read -r response
+    echo "${response:-$default}"
 }
 
 # Prompt for selection from list
@@ -154,6 +191,7 @@ DETECTED_CPU_CORES=0
 DETECTED_HAS_AVX2=false
 DETECTED_HAS_GPU=false
 DETECTED_GPU_TYPE=""
+DETECTED_LOCAL_IP=""
 
 detect_hardware() {
     section "Detecting Hardware"
@@ -203,6 +241,9 @@ detect_hardware() {
         fi
     fi
 
+    # Get local IP
+    DETECTED_LOCAL_IP=$(get_local_ip)
+
     # Display results
     echo -e "  ${BOLD}RAM:${NC}        ${DETECTED_RAM_GB} GB"
     echo -e "  ${BOLD}CPU Cores:${NC}  ${DETECTED_CPU_CORES}"
@@ -212,7 +253,87 @@ detect_hardware() {
     else
         echo -e "  ${BOLD}GPU:${NC}        None detected"
     fi
+    echo -e "  ${BOLD}Local IP:${NC}   ${DETECTED_LOCAL_IP}"
     echo ""
+
+    # Suggest best role based on hardware
+    suggest_role
+}
+
+suggest_role() {
+    local suggestion=""
+    local reason=""
+
+    if [ "$DETECTED_RAM_GB" -ge 32 ] && [ "$DETECTED_HAS_GPU" = true ]; then
+        suggestion="ai"
+        reason="High RAM + GPU detected - ideal for serving AI models"
+    elif [ "$DETECTED_RAM_GB" -ge 16 ]; then
+        suggestion="full"
+        reason="Good specs - can run everything locally"
+    elif [ "$DETECTED_RAM_GB" -ge 8 ]; then
+        suggestion="workstation"
+        reason="Suitable for development with remote AI"
+    else
+        suggestion="services"
+        reason="Limited RAM - best as lightweight services node"
+    fi
+
+    echo -e "  ${BOLD}Suggested role:${NC} ${suggestion}"
+    echo -e "  ${DIM}${reason}${NC}"
+    echo ""
+}
+
+# -----------------------------------------------------------------------------
+# Node Role Selection
+# -----------------------------------------------------------------------------
+
+select_node_role() {
+    section "Node Role Selection"
+
+    echo "What will this node be used for?"
+    echo ""
+    echo -e "  ${BOLD}1) Developer Workstation${NC}"
+    echo -e "     ${DIM}Full install: daemon + TUI + Claude skills${NC}"
+    echo -e "     ${DIM}For writing and testing agents locally${NC}"
+    echo ""
+    echo -e "  ${BOLD}2) Services Node${NC}"
+    echo -e "     ${DIM}Daemon only, headless operation${NC}"
+    echo -e "     ${DIM}Hosts capabilities, connects to AI node on network${NC}"
+    echo ""
+    echo -e "  ${BOLD}3) AI Node${NC}"
+    echo -e "     ${DIM}Dedicated AI model server for your network${NC}"
+    echo -e "     ${DIM}Other nodes connect here for inference${NC}"
+    echo ""
+    echo -e "  ${BOLD}4) All-in-one${NC}"
+    echo -e "     ${DIM}Everything: daemon + TUI + skills + local AI${NC}"
+    echo -e "     ${DIM}Self-contained, no external dependencies${NC}"
+    echo ""
+
+    if [ -n "$PRESET_ROLE" ]; then
+        NODE_ROLE="$PRESET_ROLE"
+        info "Using preset role: ${NODE_ROLE}"
+        return
+    fi
+
+    if [ "$HEADLESS" = true ]; then
+        NODE_ROLE="workstation"
+        info "Headless mode: using workstation role"
+        return
+    fi
+
+    echo -en "  Enter choice [1-4]: "
+    read -r choice
+
+    case "$choice" in
+        1) NODE_ROLE="workstation" ;;
+        2) NODE_ROLE="services" ;;
+        3) NODE_ROLE="ai" ;;
+        4) NODE_ROLE="full" ;;
+        *) NODE_ROLE="workstation" ;;
+    esac
+
+    echo ""
+    ok "Selected role: ${NODE_ROLE}"
 }
 
 # -----------------------------------------------------------------------------
@@ -224,11 +345,20 @@ RECOMMENDED_MODEL_SIZE=""
 RECOMMENDED_MODEL_DESC=""
 
 recommend_model() {
-    # Recommend based on hardware
+    # Recommend based on hardware and role
+    local for_serving=false
+    [ "$NODE_ROLE" = "ai" ] && for_serving=true
+
     if [ "$DETECTED_RAM_GB" -ge 32 ] && [ "$DETECTED_HAS_GPU" = true ]; then
-        RECOMMENDED_MODEL="codellama:7b-code"
-        RECOMMENDED_MODEL_SIZE="~4GB"
-        RECOMMENDED_MODEL_DESC="Best code quality, GPU accelerated"
+        if [ "$for_serving" = true ]; then
+            RECOMMENDED_MODEL="codellama:13b-code"
+            RECOMMENDED_MODEL_SIZE="~7GB"
+            RECOMMENDED_MODEL_DESC="Large model for network serving"
+        else
+            RECOMMENDED_MODEL="codellama:7b-code"
+            RECOMMENDED_MODEL_SIZE="~4GB"
+            RECOMMENDED_MODEL_DESC="Best code quality, GPU accelerated"
+        fi
     elif [ "$DETECTED_RAM_GB" -ge 16 ] && [ "$DETECTED_HAS_AVX2" = true ]; then
         RECOMMENDED_MODEL="deepseek-coder:6.7b"
         RECOMMENDED_MODEL_SIZE="~4GB"
@@ -267,15 +397,18 @@ check_dependencies() {
 }
 
 # -----------------------------------------------------------------------------
-# Runtime Installation (Erlang + Elixir - optional, for development)
+# Runtime Check
 # -----------------------------------------------------------------------------
 
 check_dev_runtime() {
-    if command_exists erl && command_exists elixir; then
-        ok "BEAM development runtime found (optional)"
-    else
-        info "BEAM runtime not found (Erlang/Elixir)"
-        info "This is optional - the daemon includes bundled runtime."
+    if [ "$NODE_ROLE" = "workstation" ] || [ "$NODE_ROLE" = "full" ]; then
+        if command_exists erl && command_exists elixir; then
+            ok "BEAM development runtime found"
+        else
+            info "BEAM runtime not found (Erlang/Elixir)"
+            info "Optional for agent development. Install with:"
+            echo -e "  ${DIM}curl https://mise.jdx.dev/install.sh | sh && mise install erlang@27 elixir@1.18${NC}"
+        fi
     fi
 }
 
@@ -300,7 +433,6 @@ install_daemon() {
         version="$HECATE_VERSION"
     fi
 
-    # Download self-extracting executable (includes bundled Erlang runtime)
     url="${REPO_BASE}/hecate-daemon/releases/download/${version}/hecate-daemon-${os}-${arch}"
 
     mkdir -p "$BIN_DIR"
@@ -316,6 +448,12 @@ install_daemon() {
 # -----------------------------------------------------------------------------
 
 install_tui() {
+    # Skip TUI for services and AI nodes (headless)
+    if [ "$NODE_ROLE" = "services" ]; then
+        info "Skipping TUI (services node is headless)"
+        return
+    fi
+
     section "Installing Hecate TUI"
 
     local os arch version url
@@ -352,6 +490,12 @@ install_tui() {
 # -----------------------------------------------------------------------------
 
 install_skills() {
+    # Skip skills for services and AI nodes (no Claude Code there)
+    if [ "$NODE_ROLE" = "services" ] || [ "$NODE_ROLE" = "ai" ]; then
+        info "Skipping Claude skills (not a development workstation)"
+        return
+    fi
+
     section "Installing Claude Code Skills"
 
     local claude_dir="$HOME/.claude"
@@ -376,20 +520,34 @@ install_skills() {
 # Data Directory Setup
 # -----------------------------------------------------------------------------
 
+CONFIG_API_HOST="127.0.0.1"
+CONFIG_OLLAMA_HOST=""
+
 setup_data_dir() {
     info "Setting up data directory..."
 
     mkdir -p "${INSTALL_DIR}"/{data,logs,config}
 
+    # Set config based on role
+    case "$NODE_ROLE" in
+        services|ai)
+            CONFIG_API_HOST="0.0.0.0"  # Accept connections from network
+            ;;
+        *)
+            CONFIG_API_HOST="127.0.0.1"  # Local only
+            ;;
+    esac
+
     # Create default config if not exists
     if [ ! -f "${INSTALL_DIR}/config/hecate.toml" ]; then
-        cat > "${INSTALL_DIR}/config/hecate.toml" << 'CONF'
+        cat > "${INSTALL_DIR}/config/hecate.toml" << CONF
 # Hecate Node Configuration
+# Role: ${NODE_ROLE}
 # See: https://github.com/hecate-social/hecate-node
 
 [daemon]
 api_port = 4444
-api_host = "127.0.0.1"
+api_host = "${CONFIG_API_HOST}"
 
 [mesh]
 bootstrap = ["boot.macula.io:4433"]
@@ -397,13 +555,6 @@ realm = "io.macula"
 
 [logging]
 level = "info"
-
-# AI Model Configuration (optional)
-# Uncomment and configure if using local or remote AI models
-# [ai]
-# provider = "ollama"
-# endpoint = "http://localhost:11434"
-# model = "deepseek-coder:1.3b"
 CONF
     fi
 
@@ -417,11 +568,6 @@ CONF
 OLLAMA_NEEDS_SUDO=false
 
 check_ollama_sudo() {
-    # Ollama's install script typically needs sudo for:
-    # 1. Creating /usr/local/bin/ollama
-    # 2. Creating systemd service
-    # We'll check if we can write to /usr/local/bin
-
     if [ -w "/usr/local/bin" ]; then
         OLLAMA_NEEDS_SUDO=false
     else
@@ -449,13 +595,13 @@ explain_ollama_sudo() {
 }
 
 install_ollama() {
-    section "Installing Ollama"
-
     if command_exists ollama; then
         ok "Ollama already installed"
         ollama --version 2>/dev/null || true
         return 0
     fi
+
+    section "Installing Ollama"
 
     check_ollama_sudo
 
@@ -481,54 +627,186 @@ install_ollama() {
 }
 
 # -----------------------------------------------------------------------------
-# AI Model Setup
+# AI Model Setup (Role-Specific)
 # -----------------------------------------------------------------------------
 
 AI_CONFIG_PROVIDER=""
 AI_CONFIG_ENDPOINT=""
 AI_CONFIG_MODEL=""
 
-setup_ai_model() {
+setup_ai_for_workstation() {
     section "AI Model Setup"
 
     recommend_model
 
-    echo "Hecate can integrate with AI models for code generation."
-    echo "This is optional but enables AI-assisted agent development."
+    echo "Your workstation can use AI for code assistance."
     echo ""
-
-    if [ -z "$RECOMMENDED_MODEL" ]; then
-        warn "Your system has limited RAM (${DETECTED_RAM_GB}GB)"
-        warn "Local AI models may not perform well."
-        echo ""
-    else
-        echo -e "Based on your hardware, we recommend:"
-        echo -e "  ${BOLD}${RECOMMENDED_MODEL}${NC} (${RECOMMENDED_MODEL_SIZE})"
-        echo -e "  ${DIM}${RECOMMENDED_MODEL_DESC}${NC}"
-        echo ""
-    fi
 
     local choice
     choice=$(select_option "How would you like to set up AI?" \
-        "Install Ollama + recommended model (${RECOMMENDED_MODEL:-tinyllama})" \
-        "Use a remote Ollama server (enter URL)" \
+        "Connect to an AI node on my network (recommended)" \
+        "Install a local model (uses ${DETECTED_RAM_GB}GB RAM)" \
         "Skip AI setup for now")
 
     case "$choice" in
-        1)
-            setup_ai_local
-            ;;
-        2)
-            setup_ai_remote
-            ;;
-        3)
-            info "Skipping AI setup"
-            info "You can configure AI later in ${INSTALL_DIR}/config/hecate.toml"
-            ;;
-        *)
-            info "Skipping AI setup"
-            ;;
+        1) setup_ai_remote_for_workstation ;;
+        2) setup_ai_local ;;
+        3) info "Skipping AI setup" ;;
     esac
+}
+
+setup_ai_remote_for_workstation() {
+    echo ""
+    echo "Enter the URL of your AI node (Ollama server)."
+    echo ""
+
+    # Try to discover AI nodes on local network
+    info "Scanning local network for AI nodes..."
+    local found_ai=""
+
+    # Check common IPs on same subnet
+    local base_ip
+    base_ip=$(echo "$DETECTED_LOCAL_IP" | sed 's/\.[0-9]*$//')
+
+    for last_octet in 1 10 11 12 13 100 200; do
+        local test_ip="${base_ip}.${last_octet}"
+        if [ "$test_ip" != "$DETECTED_LOCAL_IP" ]; then
+            if curl -s --connect-timeout 1 "http://${test_ip}:11434/api/tags" &>/dev/null; then
+                found_ai="${test_ip}"
+                ok "Found AI node at ${test_ip}"
+                break
+            fi
+        fi
+    done
+
+    local default_url=""
+    if [ -n "$found_ai" ]; then
+        default_url="http://${found_ai}:11434"
+    fi
+
+    echo ""
+    echo -e "${DIM}Example: http://192.168.1.100:11434 or http://ai-server.local:11434${NC}"
+    local remote_url
+    remote_url=$(prompt_input "Ollama URL" "$default_url")
+
+    if [ -z "$remote_url" ]; then
+        warn "No URL provided, skipping"
+        return
+    fi
+
+    # Test connection
+    info "Testing connection to ${remote_url}..."
+    if curl -s "${remote_url}/api/tags" &>/dev/null; then
+        ok "Connected to AI node"
+
+        # List available models
+        echo ""
+        info "Available models:"
+        local models
+        models=$(curl -s "${remote_url}/api/tags" | grep -o '"name":"[^"]*"' | sed 's/"name":"//g; s/"//g')
+        echo "$models" | while read -r m; do
+            [ -n "$m" ] && echo "    - $m"
+        done
+        echo ""
+
+        local model
+        model=$(prompt_input "Model to use" "$(echo "$models" | head -1)")
+
+        AI_CONFIG_PROVIDER="ollama"
+        AI_CONFIG_ENDPOINT="$remote_url"
+        AI_CONFIG_MODEL="$model"
+
+        ok "AI configured: ${model} @ ${remote_url}"
+    else
+        error "Could not connect to ${remote_url}"
+        warn "Skipping AI setup"
+    fi
+}
+
+setup_ai_for_services() {
+    section "AI Configuration"
+
+    echo "Services nodes typically connect to an AI node on the network."
+    echo ""
+
+    local choice
+    choice=$(select_option "AI model setup:" \
+        "Connect to an AI node on my network" \
+        "Skip AI (this node won't use AI directly)")
+
+    case "$choice" in
+        1) setup_ai_remote_for_workstation ;;
+        2) info "Skipping AI setup" ;;
+    esac
+}
+
+setup_ai_for_ai_node() {
+    section "AI Node Setup"
+
+    echo "This node will serve AI models to other nodes on your network."
+    echo ""
+    echo -e "Your IP: ${BOLD}${DETECTED_LOCAL_IP}${NC}"
+    echo -e "Other nodes will connect to: ${BOLD}http://${DETECTED_LOCAL_IP}:11434${NC}"
+    echo ""
+
+    if ! install_ollama; then
+        warn "Continuing without Ollama"
+        return
+    fi
+
+    # Configure Ollama to listen on all interfaces
+    configure_ollama_network
+
+    # Start Ollama
+    start_ollama_service
+
+    # Select and pull model
+    recommend_model
+    echo ""
+    echo -e "Recommended model for serving: ${BOLD}${RECOMMENDED_MODEL}${NC}"
+    echo ""
+
+    local model_choice
+    model_choice=$(select_option "Which model to serve?" \
+        "${RECOMMENDED_MODEL} - ${RECOMMENDED_MODEL_DESC}" \
+        "deepseek-coder:6.7b - Good for code (~4GB)" \
+        "codellama:13b-code - Large, best quality (~7GB)" \
+        "Custom model (enter name)")
+
+    local model
+    case "$model_choice" in
+        1) model="$RECOMMENDED_MODEL" ;;
+        2) model="deepseek-coder:6.7b" ;;
+        3) model="codellama:13b-code" ;;
+        4) model=$(prompt_input "Model name" "") ;;
+        *) model="$RECOMMENDED_MODEL" ;;
+    esac
+
+    if [ -n "$model" ]; then
+        info "Pulling model: ${model}"
+        info "This may take several minutes..."
+        echo ""
+
+        if ollama pull "$model"; then
+            ok "Model ${model} ready to serve"
+            AI_CONFIG_PROVIDER="ollama"
+            AI_CONFIG_ENDPOINT="http://0.0.0.0:11434"
+            AI_CONFIG_MODEL="$model"
+        else
+            error "Failed to pull model"
+        fi
+    fi
+
+    # Show connection info for other nodes
+    echo ""
+    echo -e "${GREEN}${BOLD}AI Node Ready${NC}"
+    echo ""
+    echo "Other nodes on your network can connect using:"
+    echo -e "  ${CYAN}http://${DETECTED_LOCAL_IP}:11434${NC}"
+    echo ""
+    echo "To test from another machine:"
+    echo -e "  ${DIM}curl http://${DETECTED_LOCAL_IP}:11434/api/tags${NC}"
+    echo ""
 }
 
 setup_ai_local() {
@@ -538,21 +816,16 @@ setup_ai_local() {
     fi
 
     # Ensure Ollama is running
-    if ! curl -s http://localhost:11434/api/tags &>/dev/null; then
-        info "Starting Ollama service..."
-        if command_exists systemctl && systemctl is-active --quiet ollama 2>/dev/null; then
-            : # Already running via systemd
-        else
-            # Start in background
-            ollama serve &>/dev/null &
-            sleep 2
-        fi
-    fi
+    start_ollama_service
 
-    # Select model
-    local model_choice
+    recommend_model
+
     echo ""
-    model_choice=$(select_option "Which model would you like to install?" \
+    echo -e "Recommended: ${BOLD}${RECOMMENDED_MODEL}${NC} (${RECOMMENDED_MODEL_SIZE})"
+    echo ""
+
+    local model_choice
+    model_choice=$(select_option "Which model to install?" \
         "deepseek-coder:1.3b - Fast, good for code (~1GB)" \
         "deepseek-coder:6.7b - Better quality (~4GB)" \
         "codellama:7b-code - Best code quality (~4GB)" \
@@ -565,68 +838,120 @@ setup_ai_local() {
         2) model="deepseek-coder:6.7b" ;;
         3) model="codellama:7b-code" ;;
         4) model="tinyllama" ;;
-        5)
-            echo -en "  Enter model name: "
-            read -r model
-            ;;
+        5) model=$(prompt_input "Model name" "") ;;
         *) model="deepseek-coder:1.3b" ;;
     esac
 
-    info "Pulling model: ${model}"
-    info "This may take a few minutes depending on your connection..."
-    echo ""
+    if [ -n "$model" ]; then
+        info "Pulling model: ${model}"
+        info "This may take a few minutes..."
+        echo ""
 
-    if ollama pull "$model"; then
-        ok "Model ${model} ready"
-        AI_CONFIG_PROVIDER="ollama"
-        AI_CONFIG_ENDPOINT="http://localhost:11434"
-        AI_CONFIG_MODEL="$model"
-    else
-        error "Failed to pull model"
+        if ollama pull "$model"; then
+            ok "Model ${model} ready"
+            AI_CONFIG_PROVIDER="ollama"
+            AI_CONFIG_ENDPOINT="http://localhost:11434"
+            AI_CONFIG_MODEL="$model"
+        else
+            error "Failed to pull model"
+        fi
     fi
 }
 
-setup_ai_remote() {
-    echo ""
-    echo "Enter the URL of your Ollama server."
-    echo -e "${DIM}Example: http://192.168.1.100:11434 or http://ai-server.local:11434${NC}"
-    echo ""
-    echo -en "  Ollama URL: "
-    read -r remote_url
+configure_ollama_network() {
+    local os
+    os=$(detect_os)
 
-    if [ -z "$remote_url" ]; then
-        warn "No URL provided, skipping"
+    if [ "$os" = "linux" ] && command_exists systemctl; then
+        # Configure systemd service to listen on all interfaces
+        local override_dir="/etc/systemd/system/ollama.service.d"
+
+        echo ""
+        echo -e "${YELLOW}${BOLD}Network Configuration Required${NC}"
+        echo ""
+        echo "To allow other nodes to connect, Ollama needs to listen on all interfaces."
+        echo ""
+        echo "This requires sudo to create:"
+        echo -e "  ${DIM}${override_dir}/network.conf${NC}"
+        echo ""
+        echo "Contents:"
+        echo -e "  ${DIM}[Service]${NC}"
+        echo -e "  ${DIM}Environment=\"OLLAMA_HOST=0.0.0.0\"${NC}"
+        echo ""
+
+        if confirm "Configure Ollama for network access?"; then
+            sudo mkdir -p "$override_dir"
+            echo '[Service]
+Environment="OLLAMA_HOST=0.0.0.0"' | sudo tee "${override_dir}/network.conf" > /dev/null
+            sudo systemctl daemon-reload
+            ok "Ollama configured for network access"
+        else
+            warn "Ollama will only be accessible locally"
+        fi
+    else
+        # macOS or no systemd - provide manual instructions
+        echo ""
+        info "To expose Ollama to the network, set before starting:"
+        echo -e "  ${CYAN}export OLLAMA_HOST=0.0.0.0${NC}"
+        echo ""
+    fi
+}
+
+start_ollama_service() {
+    if curl -s http://localhost:11434/api/tags &>/dev/null; then
+        ok "Ollama is running"
         return
     fi
 
-    # Test connection
-    info "Testing connection to ${remote_url}..."
-    if curl -s "${remote_url}/api/tags" &>/dev/null; then
-        ok "Connected to remote Ollama"
+    info "Starting Ollama..."
 
-        # List available models
-        echo ""
-        info "Available models on remote server:"
-        curl -s "${remote_url}/api/tags" | grep -o '"name":"[^"]*"' | sed 's/"name":"//g; s/"//g' | while read -r m; do
-            echo "    - $m"
-        done
-        echo ""
+    local os
+    os=$(detect_os)
 
-        echo -en "  Model to use (or press Enter to skip): "
-        read -r model
-
-        AI_CONFIG_PROVIDER="ollama"
-        AI_CONFIG_ENDPOINT="$remote_url"
-        AI_CONFIG_MODEL="${model:-}"
+    if [ "$os" = "linux" ] && command_exists systemctl; then
+        if systemctl is-enabled ollama &>/dev/null; then
+            sudo systemctl restart ollama
+            sleep 2
+        else
+            ollama serve &>/dev/null &
+            sleep 2
+        fi
     else
-        error "Could not connect to ${remote_url}"
-        warn "Skipping remote AI setup"
+        ollama serve &>/dev/null &
+        sleep 2
     fi
+
+    if curl -s http://localhost:11434/api/tags &>/dev/null; then
+        ok "Ollama started"
+    else
+        warn "Ollama may not be running"
+    fi
+}
+
+setup_ai_model() {
+    if [ "$SKIP_AI" = true ]; then
+        info "Skipping AI setup (--no-ai)"
+        return
+    fi
+
+    case "$NODE_ROLE" in
+        workstation)
+            setup_ai_for_workstation
+            ;;
+        services)
+            setup_ai_for_services
+            ;;
+        ai)
+            setup_ai_for_ai_node
+            ;;
+        full)
+            setup_ai_local
+            ;;
+    esac
 }
 
 save_ai_config() {
     if [ -n "$AI_CONFIG_PROVIDER" ]; then
-        # Update config file with AI settings
         cat >> "${INSTALL_DIR}/config/hecate.toml" << EOF
 
 [ai]
@@ -642,22 +967,87 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
+# Systemd Service (for services and AI nodes)
+# -----------------------------------------------------------------------------
+
+setup_systemd_service() {
+    # Only for Linux services/AI nodes
+    if [ "$(detect_os)" != "linux" ]; then
+        return
+    fi
+
+    if [ "$NODE_ROLE" != "services" ] && [ "$NODE_ROLE" != "ai" ]; then
+        return
+    fi
+
+    if ! command_exists systemctl; then
+        return
+    fi
+
+    section "System Service Setup"
+
+    echo "For server nodes, it's recommended to run Hecate as a system service."
+    echo "This enables:"
+    echo "  - Auto-start on boot"
+    echo "  - Automatic restart on failure"
+    echo "  - Background operation"
+    echo ""
+
+    if ! confirm "Create systemd service for Hecate?"; then
+        info "Skipping systemd service"
+        return
+    fi
+
+    echo ""
+    echo -e "${YELLOW}${BOLD}Sudo Required${NC}"
+    echo ""
+    echo "Creating systemd service requires sudo to write:"
+    echo -e "  ${DIM}/etc/systemd/system/hecate.service${NC}"
+    echo ""
+
+    local service_file="/etc/systemd/system/hecate.service"
+
+    sudo tee "$service_file" > /dev/null << EOF
+[Unit]
+Description=Hecate Mesh Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=${USER}
+ExecStart=${BIN_DIR}/hecate start --foreground
+Restart=on-failure
+RestartSec=5
+Environment=HOME=${HOME}
+WorkingDirectory=${INSTALL_DIR}
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable hecate
+
+    ok "Systemd service created and enabled"
+    echo ""
+    echo "To start now:"
+    echo -e "  ${CYAN}sudo systemctl start hecate${NC}"
+    echo ""
+    echo "To view logs:"
+    echo -e "  ${CYAN}journalctl -u hecate -f${NC}"
+}
+
+# -----------------------------------------------------------------------------
 # PATH Setup
 # -----------------------------------------------------------------------------
 
 setup_path() {
-    section "Finalizing Installation"
-
     if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
         warn "$BIN_DIR is not in PATH"
         echo ""
-        echo "Add this to your shell profile (~/.bashrc, ~/.zshrc, etc.):"
+        echo "Add this to your shell profile (~/.bashrc, ~/.zshrc):"
         echo ""
         echo -e "  ${BOLD}export PATH=\"\$PATH:$BIN_DIR\"${NC}"
-        echo ""
-        echo "Then reload your shell or run:"
-        echo ""
-        echo -e "  ${BOLD}source ~/.bashrc${NC}  # or ~/.zshrc"
         echo ""
     else
         ok "$BIN_DIR is in PATH"
@@ -671,37 +1061,83 @@ setup_path() {
 show_summary() {
     section "Installation Complete"
 
-    echo -e "${GREEN}${BOLD}Hecate is ready!${NC}"
+    echo -e "${GREEN}${BOLD}Hecate ${NODE_ROLE} node is ready!${NC}"
     echo ""
+
     echo "Installed components:"
     echo -e "  ${BOLD}hecate${NC}       - Mesh daemon       ${DIM}${BIN_DIR}/hecate${NC}"
-    echo -e "  ${BOLD}hecate-tui${NC}   - Terminal UI       ${DIM}${BIN_DIR}/hecate-tui${NC}"
-    echo -e "  ${BOLD}skills${NC}       - Claude Code       ${DIM}~/.claude/HECATE_SKILLS.md${NC}"
+
+    if [ "$NODE_ROLE" != "services" ]; then
+        echo -e "  ${BOLD}hecate-tui${NC}   - Terminal UI       ${DIM}${BIN_DIR}/hecate-tui${NC}"
+    fi
+
+    if [ "$NODE_ROLE" = "workstation" ] || [ "$NODE_ROLE" = "full" ]; then
+        echo -e "  ${BOLD}skills${NC}       - Claude Code       ${DIM}~/.claude/HECATE_SKILLS.md${NC}"
+    fi
 
     if [ -n "$AI_CONFIG_MODEL" ]; then
-        echo -e "  ${BOLD}ai model${NC}     - ${AI_CONFIG_MODEL}   ${DIM}${AI_CONFIG_ENDPOINT}${NC}"
+        echo -e "  ${BOLD}ai model${NC}     - ${AI_CONFIG_MODEL}"
+        echo -e "                   ${DIM}${AI_CONFIG_ENDPOINT}${NC}"
     fi
 
     echo ""
     echo "Configuration: ${INSTALL_DIR}/config/hecate.toml"
     echo ""
-    echo -e "${BOLD}Next steps:${NC}"
-    echo ""
-    echo "  1. Start the daemon:"
-    echo -e "     ${CYAN}hecate start${NC}"
-    echo ""
-    echo "  2. Open the TUI to monitor:"
-    echo -e "     ${CYAN}hecate-tui${NC}"
-    echo ""
-    echo "  3. Pair with the mesh (first time):"
-    echo -e "     ${CYAN}hecate-tui pair${NC}"
-    echo ""
 
-    if [ -n "$AI_CONFIG_MODEL" ]; then
-        echo "  4. Test AI model:"
-        echo -e "     ${CYAN}ollama run ${AI_CONFIG_MODEL} \"Write a Go hello world\"${NC}"
-        echo ""
-    fi
+    # Role-specific next steps
+    case "$NODE_ROLE" in
+        workstation)
+            echo -e "${BOLD}Next steps:${NC}"
+            echo ""
+            echo "  1. Start the daemon:"
+            echo -e "     ${CYAN}hecate start${NC}"
+            echo ""
+            echo "  2. Open the TUI:"
+            echo -e "     ${CYAN}hecate-tui${NC}"
+            echo ""
+            echo "  3. Pair with the mesh (first time):"
+            echo -e "     ${CYAN}hecate-tui pair${NC}"
+            ;;
+        services)
+            echo -e "${BOLD}Next steps:${NC}"
+            echo ""
+            echo "  1. Start the service:"
+            echo -e "     ${CYAN}sudo systemctl start hecate${NC}"
+            echo ""
+            echo "  2. Check status:"
+            echo -e "     ${CYAN}sudo systemctl status hecate${NC}"
+            echo ""
+            echo "  3. View logs:"
+            echo -e "     ${CYAN}journalctl -u hecate -f${NC}"
+            ;;
+        ai)
+            echo -e "${BOLD}Next steps:${NC}"
+            echo ""
+            echo "  1. Start Hecate:"
+            echo -e "     ${CYAN}hecate start${NC}"
+            echo ""
+            echo "  2. Verify Ollama is accessible:"
+            echo -e "     ${CYAN}curl http://${DETECTED_LOCAL_IP}:11434/api/tags${NC}"
+            echo ""
+            echo "  3. Share this URL with other nodes:"
+            echo -e "     ${CYAN}http://${DETECTED_LOCAL_IP}:11434${NC}"
+            ;;
+        full)
+            echo -e "${BOLD}Next steps:${NC}"
+            echo ""
+            echo "  1. Start the daemon:"
+            echo -e "     ${CYAN}hecate start${NC}"
+            echo ""
+            echo "  2. Open the TUI:"
+            echo -e "     ${CYAN}hecate-tui${NC}"
+            echo ""
+            if [ -n "$AI_CONFIG_MODEL" ]; then
+                echo "  3. Test AI:"
+                echo -e "     ${CYAN}ollama run ${AI_CONFIG_MODEL} \"Hello\"${NC}"
+                echo ""
+            fi
+            ;;
+    esac
 
     echo -e "${DIM}Documentation: https://github.com/hecate-social/hecate-node${NC}"
     echo ""
@@ -717,9 +1153,16 @@ show_help() {
     echo "Usage: $0 [options]"
     echo ""
     echo "Options:"
+    echo "  --role=ROLE  Set node role (workstation|services|ai|full)"
     echo "  --no-ai      Skip AI model setup"
     echo "  --headless   Non-interactive mode (use defaults)"
     echo "  --help       Show this help"
+    echo ""
+    echo "Node roles:"
+    echo "  workstation  Developer workstation (daemon + TUI + skills)"
+    echo "  services     Headless services node (daemon only)"
+    echo "  ai           Dedicated AI model server"
+    echo "  full         All-in-one (everything local)"
     echo ""
     echo "Environment variables:"
     echo "  HECATE_VERSION     Version to install (default: latest)"
@@ -728,7 +1171,8 @@ show_help() {
     echo ""
     echo "Examples:"
     echo "  curl -fsSL https://hecate.social/install.sh | bash"
-    echo "  curl -fsSL https://hecate.social/install.sh | bash -s -- --no-ai"
+    echo "  curl -fsSL https://hecate.social/install.sh | bash -s -- --role=ai"
+    echo "  curl -fsSL https://hecate.social/install.sh | bash -s -- --no-ai --headless"
     echo ""
 }
 
@@ -740,6 +1184,10 @@ main() {
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --role=*)
+                PRESET_ROLE="${1#*=}"
+                shift
+                ;;
             --no-ai)
                 SKIP_AI=true
                 shift
@@ -762,9 +1210,12 @@ main() {
     show_banner
     check_dependencies
     detect_hardware
+    select_node_role
 
-    echo -e "Installing to: ${BOLD}${INSTALL_DIR}${NC}"
-    echo -e "Binaries to:   ${BOLD}${BIN_DIR}${NC}"
+    echo ""
+    echo -e "Role:        ${BOLD}${NODE_ROLE}${NC}"
+    echo -e "Install to:  ${BOLD}${INSTALL_DIR}${NC}"
+    echo -e "Binaries:    ${BOLD}${BIN_DIR}${NC}"
     echo ""
 
     if ! confirm "Continue with installation?" "y"; then
@@ -777,12 +1228,9 @@ main() {
     install_tui
     install_skills
     check_dev_runtime
-
-    if [ "$SKIP_AI" = false ]; then
-        setup_ai_model
-        save_ai_config
-    fi
-
+    setup_ai_model
+    save_ai_config
+    setup_systemd_service
     setup_path
     show_summary
 }

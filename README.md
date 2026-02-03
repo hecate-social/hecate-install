@@ -1,6 +1,6 @@
 # Hecate Node
 
-One-command installer for the complete Hecate stack with intelligent hardware detection and optional AI model setup.
+One-command installer for the complete Hecate stack with intelligent hardware detection and role-based setup.
 
 ## Quick Install
 
@@ -8,41 +8,120 @@ One-command installer for the complete Hecate stack with intelligent hardware de
 curl -fsSL https://hecate.social/install.sh | bash
 ```
 
-## What Gets Installed
+## Node Roles
 
-| Component | Description |
-|-----------|-------------|
-| **Hecate Daemon** | Erlang mesh network daemon (port 4444) |
-| **Hecate TUI** | Terminal UI for monitoring and management |
-| **Hecate Skills** | Claude Code integration for mesh operations |
-| **AI Model** | Optional local code generation model (Ollama) |
+The installer asks what type of node you're setting up:
+
+| Role | Installs | AI Setup | Use Case |
+|------|----------|----------|----------|
+| **Developer Workstation** | Daemon + TUI + Skills | Connect to AI node | Writing and testing agents |
+| **Services Node** | Daemon only | Remote AI | Headless server hosting capabilities |
+| **AI Node** | Daemon + Ollama | Local model, network-exposed | Dedicated AI server for your network |
+| **All-in-one** | Everything | Local model | Self-contained development |
+
+### Developer Workstation
+
+Full development environment with Claude Code integration:
+- Hecate daemon for mesh connectivity
+- Terminal UI for monitoring
+- Claude Code skills for AI-assisted development
+- Connects to an AI node on your network (or local)
+
+```bash
+curl -fsSL https://hecate.social/install.sh | bash -s -- --role=workstation
+```
+
+### Services Node
+
+Lightweight headless node for hosting services:
+- Daemon only (no TUI or skills)
+- Runs as systemd service (auto-start, background)
+- API exposed to network (`0.0.0.0:4444`)
+- Connects to AI node for inference
+
+```bash
+curl -fsSL https://hecate.social/install.sh | bash -s -- --role=services
+```
+
+### AI Node
+
+Dedicated AI model server for your network:
+- Ollama installed and configured for network access
+- Large model pulled and ready to serve
+- Other nodes connect to this for inference
+- Shows your IP and connection URL for other nodes
+
+```bash
+curl -fsSL https://hecate.social/install.sh | bash -s -- --role=ai
+```
+
+### All-in-one
+
+Everything running locally, no external dependencies:
+- Full stack: daemon, TUI, skills, local AI
+- Best for isolated development or single-machine setups
+
+```bash
+curl -fsSL https://hecate.social/install.sh | bash -s -- --role=full
+```
 
 ## Features
 
 ### Intelligent Hardware Detection
 
-The installer automatically detects:
+The installer automatically detects and displays:
 - **RAM** - Recommends appropriate model size
-- **CPU cores** - Configures concurrency
+- **CPU cores** - Suggests role based on capacity
 - **AVX2 support** - Optimizes inference performance
 - **GPU** - Enables acceleration (NVIDIA, AMD, Apple Silicon)
+- **Local IP** - For network configuration
 
-### AI Model Options
+### AI Node Discovery
 
-The installer offers three choices:
+When setting up a workstation, the installer:
+1. Scans your local network for existing AI nodes
+2. Tests connectivity to discovered servers
+3. Lists available models on the AI node
+4. Configures automatic connection
 
-1. **Local Ollama** - Install Ollama and a recommended code model
-2. **Remote Server** - Connect to an existing Ollama server on your network
-3. **Skip** - No AI setup (can configure later)
+### Clear Sudo Explanations
 
-Recommended models based on hardware:
+When sudo is needed (Ollama install, systemd service), the installer:
+1. Explains exactly what needs sudo and why
+2. Shows the exact commands/files that will be created
+3. Asks for explicit confirmation before proceeding
 
-| RAM | Recommended Model | Size |
-|-----|------------------|------|
-| 32GB+ with GPU | codellama:7b-code | ~4GB |
-| 16GB+ | deepseek-coder:6.7b | ~4GB |
-| 8GB+ | deepseek-coder:1.3b | ~1GB |
-| 4GB+ | tinyllama | ~700MB |
+## Installation Options
+
+```bash
+# Interactive (recommended)
+curl -fsSL https://hecate.social/install.sh | bash
+
+# Preset role
+curl -fsSL https://hecate.social/install.sh | bash -s -- --role=workstation
+curl -fsSL https://hecate.social/install.sh | bash -s -- --role=services
+curl -fsSL https://hecate.social/install.sh | bash -s -- --role=ai
+curl -fsSL https://hecate.social/install.sh | bash -s -- --role=full
+
+# Skip AI setup
+curl -fsSL https://hecate.social/install.sh | bash -s -- --no-ai
+
+# Non-interactive (CI/automation)
+curl -fsSL https://hecate.social/install.sh | bash -s -- --headless
+
+# Combine options
+curl -fsSL https://hecate.social/install.sh | bash -s -- --role=services --no-ai
+```
+
+## What Gets Installed
+
+| Component | Workstation | Services | AI Node | All-in-one |
+|-----------|:-----------:|:--------:|:-------:|:----------:|
+| Hecate Daemon | ✅ | ✅ | ✅ | ✅ |
+| Hecate TUI | ✅ | ❌ | ✅ | ✅ |
+| Claude Skills | ✅ | ❌ | ❌ | ✅ |
+| Ollama | optional | ❌ | ✅ | ✅ |
+| Systemd Service | ❌ | ✅ | optional | ❌ |
 
 ## Installation Paths
 
@@ -50,49 +129,19 @@ Recommended models based on hardware:
 |------|----------|
 | `~/.local/bin/hecate` | Daemon binary |
 | `~/.local/bin/hecate-tui` | TUI binary |
-| `~/.hecate/` | Data directory (config, logs, state) |
-| `~/.hecate/config/hecate.toml` | Configuration file |
+| `~/.hecate/` | Data directory |
+| `~/.hecate/config/hecate.toml` | Configuration |
 | `~/.claude/HECATE_SKILLS.md` | Claude Code skills |
-
-## Installation Options
-
-```bash
-# Standard interactive install
-curl -fsSL https://hecate.social/install.sh | bash
-
-# Skip AI model setup
-curl -fsSL https://hecate.social/install.sh | bash -s -- --no-ai
-
-# Non-interactive (use defaults)
-curl -fsSL https://hecate.social/install.sh | bash -s -- --headless
-
-# Show help
-curl -fsSL https://hecate.social/install.sh | bash -s -- --help
-```
-
-## Post-Install: Pairing
-
-After installation, pair your node with the mesh:
-
-```bash
-# Start the daemon
-hecate start
-
-# Open the TUI
-hecate-tui
-
-# Run pairing (first time)
-hecate-tui pair
-```
 
 ## Configuration
 
-Edit `~/.hecate/config/hecate.toml`:
+The installer creates `~/.hecate/config/hecate.toml` with role-appropriate defaults:
 
 ```toml
+# Role: workstation
 [daemon]
 api_port = 4444
-api_host = "127.0.0.1"
+api_host = "127.0.0.1"  # "0.0.0.0" for services/AI nodes
 
 [mesh]
 bootstrap = ["boot.macula.io:4433"]
@@ -101,22 +150,34 @@ realm = "io.macula"
 [logging]
 level = "info"
 
-# AI model (if configured)
 [ai]
 provider = "ollama"
-endpoint = "http://localhost:11434"
-model = "deepseek-coder:1.3b"
+endpoint = "http://192.168.1.100:11434"  # Your AI node
+model = "deepseek-coder:6.7b"
 ```
 
-### Remote AI Server
+## Network Setup Example
 
-To use a remote Ollama server instead of local:
+A typical multi-node setup:
 
-```toml
-[ai]
-provider = "ollama"
-endpoint = "http://192.168.1.100:11434"
-model = "codellama:7b-code"
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Your Network                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐ │
+│   │   AI Node    │    │   Services   │    │  Workstation │ │
+│   │  (beam01)    │    │   (beam02)   │    │  (laptop)    │ │
+│   │              │    │              │    │              │ │
+│   │ Ollama:11434 │◄───│  daemon:4444 │    │ daemon:4444  │ │
+│   │ codellama:7b │    │  capabilities│    │ TUI + skills │ │
+│   │              │◄───│              │    │              │ │
+│   └──────────────┘    └──────────────┘    └──────┬───────┘ │
+│          ▲                                       │          │
+│          │                                       │          │
+│          └───────────────────────────────────────┘          │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Environment Variables
@@ -129,40 +190,15 @@ model = "codellama:7b-code"
 
 ## Sudo Requirements
 
-The installer only requires sudo for one optional component:
+The installer only requires sudo for:
 
-**Ollama installation** (if selected):
-- Installs binary to `/usr/local/bin/ollama`
-- Creates systemd service for background operation
+| Component | Requires Sudo | Reason |
+|-----------|:-------------:|--------|
+| Ollama install | ✅ | Binary in `/usr/local/bin`, systemd service |
+| Systemd service | ✅ | Service file in `/etc/systemd/system/` |
+| Network config | ✅ | Ollama systemd override for `0.0.0.0` |
 
-The installer clearly explains what sudo access is needed for and prompts for confirmation. You can skip Ollama and use a remote server instead.
-
-## Manual Installation
-
-If you prefer manual installation:
-
-```bash
-# 1. Download daemon (self-contained, includes Erlang runtime)
-curl -fsSL https://github.com/hecate-social/hecate-daemon/releases/latest/download/hecate-daemon-linux-amd64 -o ~/.local/bin/hecate
-chmod +x ~/.local/bin/hecate
-
-# 2. Download TUI
-curl -fsSL https://github.com/hecate-social/hecate-tui/releases/latest/download/hecate-tui-linux-amd64.tar.gz | tar xz -C ~/.local/bin
-
-# 3. Download skills
-mkdir -p ~/.claude
-curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-node/main/SKILLS.md -o ~/.claude/HECATE_SKILLS.md
-
-# 4. Create config
-mkdir -p ~/.hecate/config
-cat > ~/.hecate/config/hecate.toml << 'EOF'
-[daemon]
-api_port = 4444
-
-[mesh]
-bootstrap = ["boot.macula.io:4433"]
-EOF
-```
+The installer clearly explains each sudo requirement and asks for confirmation.
 
 ## Uninstall
 
@@ -176,6 +212,8 @@ Or manually:
 rm ~/.local/bin/hecate ~/.local/bin/hecate-tui
 rm -rf ~/.hecate
 rm ~/.claude/HECATE_SKILLS.md
+sudo systemctl disable hecate 2>/dev/null
+sudo rm /etc/systemd/system/hecate.service 2>/dev/null
 ```
 
 ## Requirements
@@ -183,7 +221,7 @@ rm ~/.claude/HECATE_SKILLS.md
 - Linux (x86_64, arm64) or macOS (arm64, x86_64)
 - curl, tar
 - Terminal with 256 color support (for TUI)
-- 4GB+ RAM (for AI models, optional)
+- For AI: 4GB+ RAM (8GB+ recommended)
 
 ## Components
 
