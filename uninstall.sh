@@ -50,7 +50,6 @@ FOUND_COMPOSE=false
 FOUND_CONTAINERS=false
 FOUND_CLI=false
 FOUND_TUI=false
-FOUND_SKILLS=false
 
 if [ -f "${INSTALL_DIR}/docker-compose.yml" ]; then
     FOUND_COMPOSE=true
@@ -70,11 +69,6 @@ fi
 if [ -f "${BIN_DIR}/hecate-tui" ]; then
     FOUND_TUI=true
     echo -e "  ${GREEN}✓${NC} TUI binary: ${BIN_DIR}/hecate-tui"
-fi
-
-if [ -f "$HOME/.claude/HECATE_SKILLS.md" ]; then
-    FOUND_SKILLS=true
-    echo -e "  ${GREEN}✓${NC} Claude skills: ~/.claude/HECATE_SKILLS.md"
 fi
 
 if [ "$FOUND_COMPOSE" = false ] && [ "$FOUND_CLI" = false ] && [ "$FOUND_TUI" = false ]; then
@@ -111,19 +105,6 @@ fi
 if [ "$FOUND_TUI" = true ]; then
     rm -f "${BIN_DIR}/hecate-tui"
     ok "Removed ${BIN_DIR}/hecate-tui"
-fi
-
-# Remove skills
-if [ "$FOUND_SKILLS" = true ]; then
-    rm -f "$HOME/.claude/HECATE_SKILLS.md"
-    ok "Removed Claude skills"
-
-    if [ -f "$HOME/.claude/CLAUDE.md" ]; then
-        sed -i '/HECATE_SKILLS/d' "$HOME/.claude/CLAUDE.md" 2>/dev/null || \
-        sed -i '' '/HECATE_SKILLS/d' "$HOME/.claude/CLAUDE.md" 2>/dev/null || true
-        sed -i '/## Hecate Skills/d' "$HOME/.claude/CLAUDE.md" 2>/dev/null || \
-        sed -i '' '/## Hecate Skills/d' "$HOME/.claude/CLAUDE.md" 2>/dev/null || true
-    fi
 fi
 
 # Remove data directory

@@ -6,7 +6,7 @@
 # Installs:
 #   - hecate-daemon via Docker Compose (+ Watchtower for auto-updates)
 #   - hecate-tui native binary
-#   - Claude Code skills
+#   - Hecate TUI (AI interface)
 #
 set -euo pipefail
 
@@ -299,7 +299,7 @@ select_node_roles() {
     echo "What will this node be used for?"
     echo -e "${DIM}Select multiple roles by entering numbers separated by spaces${NC}"
     echo ""
-    echo -e "  ${BOLD}1)${NC} Workstation     ${DIM}- TUI + Claude skills for development${NC}"
+    echo -e "  ${BOLD}1)${NC} Workstation     ${DIM}- TUI for development and AI chat${NC}"
     echo -e "  ${BOLD}2)${NC} Services        ${DIM}- Host capabilities on the mesh${NC}"
     echo -e "  ${BOLD}3)${NC} AI Provider     ${DIM}- Serve LLM models (installs Ollama)${NC}"
     echo -e "  ${BOLD}4)${NC} Full            ${DIM}- All of the above${NC}"
@@ -1060,34 +1060,7 @@ WRAPPER
 }
 
 # -----------------------------------------------------------------------------
-# Claude Skills Installation
-# -----------------------------------------------------------------------------
-
-install_skills() {
-    # Skills are for workstation role
-    if [ "$ROLE_WORKSTATION" = false ]; then
-        info "Skipping Claude skills (not a workstation role)"
-        return
-    fi
-
-    section "Installing Claude Code Skills"
-
-    local claude_dir="$HOME/.claude"
-    mkdir -p "$claude_dir"
-
-    download_file "${RAW_BASE}/SKILLS.md" "${claude_dir}/HECATE_SKILLS.md"
-
-    if [ -f "${claude_dir}/CLAUDE.md" ]; then
-        if ! grep -q "HECATE_SKILLS.md" "${claude_dir}/CLAUDE.md"; then
-            echo "" >> "${claude_dir}/CLAUDE.md"
-            echo "## Hecate Skills" >> "${claude_dir}/CLAUDE.md"
-            echo "" >> "${claude_dir}/CLAUDE.md"
-            echo "See [HECATE_SKILLS.md](HECATE_SKILLS.md) for Hecate mesh integration skills." >> "${claude_dir}/CLAUDE.md"
-        fi
-    fi
-
-    ok "Hecate Skills installed to ~/.claude/"
-}
+# (Claude skills section removed - Hecate TUI is the AI interface now)
 
 # -----------------------------------------------------------------------------
 # Start Daemon
@@ -1327,7 +1300,6 @@ show_summary() {
     echo -e "  ${BOLD}hecate${NC}       - CLI wrapper    ${DIM}${BIN_DIR}/hecate${NC}"
     echo -e "  ${BOLD}hecate-tui${NC}   - Terminal UI    ${DIM}${BIN_DIR}/hecate-tui${NC}"
     echo -e "  ${BOLD}daemon${NC}       - Docker Compose ${DIM}${INSTALL_DIR}/docker-compose.yml${NC}"
-    echo -e "  ${BOLD}skills${NC}       - Claude Code    ${DIM}~/.claude/HECATE_SKILLS.md${NC}"
     
     # Show Ollama status
     if command_exists ollama; then
@@ -1368,7 +1340,7 @@ show_help() {
     echo "  --help        Show this help"
     echo ""
     echo "Node Roles:"
-    echo "  workstation   Developer workstation (TUI + Claude skills)"
+    echo "  workstation   Developer workstation with TUI"
     echo "  services      Services host (API exposed to network)"
     echo "  ai            AI Provider (installs Ollama, serves LLM)"
     echo "  full          All roles combined"
@@ -1409,7 +1381,6 @@ main() {
     echo "  • Hecate daemon (via Docker Compose)"
     [ "$ROLE_AI" = true ] && echo "  • Ollama + models (AI Provider)"
     [ "$ROLE_WORKSTATION" = true ] && echo "  • Hecate TUI (native binary)"
-    [ "$ROLE_WORKSTATION" = true ] && echo "  • Claude Code skills"
     echo "  • Watchtower (auto-updates)"
     echo ""
 
@@ -1422,7 +1393,6 @@ main() {
     setup_daemon
     install_tui
     install_cli_wrapper
-    install_skills
     setup_path
     start_daemon
     init_identity
