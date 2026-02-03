@@ -53,29 +53,33 @@
 
 ---
 
-### 2026-02-03 Session (Review Tasks)
+### 2026-02-03 Session (Cross-Repo Verification)
 
 **Status:** Complete
 
-**Reviewed:**
-- `install.sh` (1424 lines) - Edge cases, cross-platform, error handling
-- `uninstall.sh` (197 lines) - Cleanup completeness
-- `SKILLS.md` (291 lines) - Hecate Skills coverage
+**Verified against actual implementations:**
+- `hecate-daemon/apps/hecate_api/src/hecate_api_app.erl` - actual API routes
+- `hecate-node/install.sh` - CLI wrapper
+- `hecate-node/SKILLS.md` - documentation
+- `hecate-tui/internal/client/client.go` - TUI API calls
+- `macula-realm/router.ex` - pairing routes
 
 **Findings:**
-1. **Install script**: Solid. No issues found.
-   - Strict mode, good error handling
-   - Hardware detection works well
-   - Unsupported platforms (ARM32, FreeBSD) fail fast with clear errors
 
-2. **Uninstall script**: One gap
-   - Does NOT remove PATH entries added to shell profiles
-   - Otherwise complete (containers, binaries, data, Ollama)
+1. **Install script CLI wrapper**: ✅ Correct - matches daemon API
 
-3. **SKILLS.md**: Missing documentation for newer features
-   - LLM REST API (`/api/llm/*`)
-   - Pairing REST API (`/api/pairing/*`)
-   - Identity init (`/identity/init`)
+2. **Uninstall script**: 🟡 Missing PATH cleanup
+
+3. **SKILLS.md**: 🔴 **CRITICAL** - Significantly out of sync
+   - Many documented endpoints don't exist
+   - Wrong paths (e.g., `/pubsub/*` should be `/subscriptions/*`)
+   - Missing required path params (e.g., `/social/followers` needs `:agent_identity`)
+   - Missing: LLM, Pairing, Identity init, Agents, Reputation
+   - **Needs complete rewrite**
+
+4. **macula-realm**: 🟡 Missing route for `POST /api/v1/pairing/sessions/:id/confirm`
+
+5. **hecate-tui**: 🟡 May be calling non-existent endpoints (needs verification)
 
 **Full findings in RESPONSES.md**
 

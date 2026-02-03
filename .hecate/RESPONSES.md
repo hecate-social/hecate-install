@@ -77,7 +77,7 @@ Fixed two bugs in `macula-io/macula-realm` that were blocking the pairing flow:
 
 ---
 
-## 2026-02-03 COMPLETE: Install Script Review & SKILLS.md Audit
+## 2026-02-03 COMPLETE: Cross-Repo Verification & SKILLS.md Audit
 
 ### Task Reference
 - 🟡 MEDIUM: Review Install Script
@@ -85,80 +85,135 @@ Fixed two bugs in `macula-io/macula-realm` that were blocking the pairing flow:
 
 ---
 
+### Cross-Repo Verification Summary
+
+Verified actual implementations against documentation across:
+- `hecate-daemon` (Erlang API)
+- `hecate-node` (installer, CLI wrapper, SKILLS.md)
+- `hecate-tui` (Go TUI)
+- `macula-realm` (pairing backend)
+
+---
+
 ### Install Script Review (`install.sh`)
 
-**Overall Assessment: Script is solid.**
+**Status: ✅ CORRECT**
 
-The install.sh is well-written with:
-- `set -euo pipefail` strict mode
-- Graceful error handling throughout
-- Good hardware detection (RAM, CPU, GPU, AVX2, storage)
-- Clear sudo explanations before elevation
-- Flexible role selection (workstation, services, ai, or combinations)
-- Pairing timeout (10 minutes, line 1168)
-
-**Cross-Platform Support:**
-
-| Platform | Status |
-|----------|--------|
-| Linux x86_64 | ✅ |
-| Linux arm64 | ✅ |
-| macOS arm64 (Apple Silicon) | ✅ |
-| macOS x86_64 (Intel) | ✅ |
-
-**Not Supported (by design):**
-- ARM32 (armv7l) - `detect_arch()` line 104 calls `fatal`
-- FreeBSD - `detect_os()` line 96 calls `fatal`
-
-These fail fast with clear error messages, which is correct behavior.
-
-**No issues found.** Script handles edge cases well.
+The CLI wrapper (lines 866-1055) matches the daemon API:
+- `hecate health` → `GET /health` ✅
+- `hecate identity` → `GET /identity` ✅
+- `hecate init` → `POST /identity/init` ✅
+- `hecate pair` → `POST /api/pairing/start`, `GET /api/pairing/status` ✅
+- `hecate llm models` → `GET /api/llm/models` ✅
+- `hecate llm health` → `GET /api/llm/health` ✅
+- `hecate llm chat` → `POST /api/llm/chat` ✅
 
 ---
 
 ### Uninstall Script Review (`uninstall.sh`)
 
-**Gap Found: PATH entries not cleaned up**
-
-The installer adds PATH to shell profiles (lines 1229-1234):
-```bash
-echo "# Hecate CLI" >> "$shell_profile"
-echo "$path_line" >> "$shell_profile"
-```
-
-The uninstaller does NOT remove these lines. Confirmed via grep - no matches for PATH, bashrc, zshrc, or profile in uninstall.sh.
-
-**Recommendation:** Add to uninstall.sh:
-```bash
-section "Cleaning Shell Profiles"
-for profile in ~/.bashrc ~/.zshrc ~/.profile; do
-    if [ -f "$profile" ] && grep -q "Hecate CLI" "$profile"; then
-        sed -i '/# Hecate CLI/d' "$profile"
-        sed -i '/\.local\/bin/d' "$profile"
-        ok "Cleaned $profile"
-    fi
-done
-```
+**Gap: PATH entries not cleaned up** (still valid)
 
 ---
 
-### SKILLS.md Review
+### SKILLS.md Review - CRITICAL DRIFT FOUND
 
-**Missing Documentation:**
+**🔴 SKILLS.md is significantly out of sync with actual daemon API**
 
-1. **LLM endpoints** - The CLI wrapper (lines 990-1027) has LLM commands but SKILLS.md doesn't document the REST API:
-   - `GET /api/llm/models`
-   - `POST /api/llm/chat`
-   - `GET /api/llm/health`
+#### Endpoints That Don't Exist (documented but NOT in daemon):
 
-2. **Pairing endpoints** - CLI has `hecate pair` but REST API not documented:
-   - `POST /api/pairing/start`
-   - `GET /api/pairing/status`
+| Documented | Reality |
+|------------|---------|
+| `POST /rpc/register` | ❌ Does not exist |
+| `POST /rpc/call` | ❌ Does not exist |
+| `POST /pubsub/subscribe` | ❌ Wrong path |
+| `POST /pubsub/publish` | ❌ Does not exist |
+| `GET /pubsub/subscriptions` | ❌ Wrong path |
+| `GET /social/followers` | ❌ Missing `:agent_identity` param |
+| `GET /social/following` | ❌ Missing `:agent_identity` param |
+| `GET /ucan/granted` | ❌ Does not exist |
+| `GET /ucan/received` | ❌ Does not exist |
 
-3. **Identity init** - CLI has `hecate init` but REST API not documented:
-   - `POST /identity/init`
+#### Correct Endpoints (from hecate_api_app.erl):
 
-**Documented features are correct** - Capabilities, RPC, PubSub, Social, UCAN all look good.
+**Capabilities:**
+- `POST /capabilities/announce`
+- `POST /capabilities/discover` (not GET!)
+- `GET /capabilities/:mri`
+- `PUT /capabilities/:mri/update`
+- `DELETE /capabilities/:mri/retract`
+
+**Subscriptions (not PubSub!):**
+- `GET /subscriptions`
+- `POST /subscriptions/subscribe`
+- `DELETE /subscriptions/unsubscribe`
+- `GET /subscriptions/stats`
+
+**Social:**
+- `POST /social/follow`
+- `POST /social/unfollow`
+- `POST /social/endorse`
+- `DELETE /social/endorsement/revoke`
+- `GET /social/followers/:agent_identity`
+- `GET /social/following/:agent_identity`
+- `GET /social/endorsements/:agent_identity`
+- `GET /social/graph/:agent_identity`
+
+**RPC (tracking only):**
+- `POST /rpc/track`
+
+**UCAN:**
+- `POST /ucan/grant`
+- `DELETE /ucan/revoke/:capability_id`
+- `GET /ucan/capabilities`
+- `GET /ucan/verify/:capability_id`
+- `POST /ucan/verify`
+
+**Identity:**
+- `GET /identity`
+- `POST /identity/init`
+
+**Pairing:**
+- `POST /api/pairing/start`
+- `GET /api/pairing/status`
+- `POST /api/pairing/cancel`
+
+**LLM:**
+- `GET /api/llm/models`
+- `POST /api/llm/chat`
+- `GET /api/llm/health`
+
+**Agents:**
+- `GET /agents`
+- `POST /agents/register`
+- `GET /agents/:agent_identity`
+- `PUT /agents/:agent_identity/update`
+
+**Reputation:**
+- `GET /reputation/:agent_identity`
+- `GET /rpc-calls`
+- `GET /disputes`
+
+---
+
+### macula-realm Pairing - Missing Route
+
+**Found:** `PairingSessionController.confirm/2` action exists but **route is not defined** in router.ex.
+
+Should be: `POST /api/v1/pairing/sessions/:id/confirm`
+
+---
+
+### hecate-tui Status
+
+Currently read-only, calls:
+- `GET /health`
+- `GET /identity`
+- `GET /capabilities/discover` (note: should be POST per daemon)
+- `GET /rpc/procedures` (note: endpoint doesn't exist in daemon!)
+- `GET /subscriptions`
+
+**Potential bug:** TUI may be calling endpoints that don't exist or using wrong methods.
 
 ---
 
@@ -166,9 +221,12 @@ done
 
 | Finding | Severity | Action |
 |---------|----------|--------|
-| Install script | ✅ Good | None needed |
-| Uninstall PATH cleanup | 🟡 Medium | Add shell profile cleanup |
-| SKILLS.md LLM docs | 🟢 Low | Add LLM section |
-| SKILLS.md pairing docs | 🟢 Low | Add pairing section |
+| Install script CLI wrapper | ✅ Good | None |
+| Uninstall PATH cleanup | 🟡 Medium | Add cleanup |
+| **SKILLS.md accuracy** | 🔴 **Critical** | **Complete rewrite needed** |
+| macula-realm missing route | 🟡 Medium | Add confirm route |
+| hecate-tui endpoint mismatch | 🟡 Medium | Verify/fix API calls |
 
-*Review complete.* 🗝️
+**Recommendation:** SKILLS.md needs complete rewrite to match actual daemon API in `hecate_api_app.erl`.
+
+*Cross-repo verification complete.* 🗝️
