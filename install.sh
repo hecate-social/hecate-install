@@ -238,6 +238,107 @@ ensure_docker() {
 }
 
 # -----------------------------------------------------------------------------
+# Ollama Setup (Optional - for LLM capabilities)
+# -----------------------------------------------------------------------------
+
+check_ollama() {
+    if command_exists ollama; then
+        local ollama_version
+        ollama_version=$(ollama --version 2>/dev/null | head -1)
+        ok "Ollama installed: ${ollama_version}"
+        return 0
+    else
+        return 1
+    fi
+}
+
+install_ollama() {
+    section "Installing Ollama"
+
+    echo "Ollama provides local LLM inference for Hecate's AI features."
+    echo ""
+    echo "This will run Ollama's official install script:"
+    echo -e "  ${DIM}curl -fsSL https://ollama.com/install.sh | sh${NC}"
+    echo ""
+
+    if ! confirm "Install Ollama?"; then
+        warn "Skipping Ollama installation"
+        warn "LLM features will be unavailable until Ollama is installed"
+        return 1
+    fi
+
+    info "Running Ollama install script..."
+    curl -fsSL https://ollama.com/install.sh | sh
+
+    if ! command_exists ollama; then
+        warn "Ollama installation failed"
+        return 1
+    fi
+
+    ok "Ollama installed"
+    return 0
+}
+
+pull_default_model() {
+    local model="${1:-llama3.2}"
+    
+    echo ""
+    echo "Hecate works best with a local model for AI features."
+    echo ""
+    echo -e "Recommended: ${BOLD}${model}${NC} (~2GB download)"
+    echo ""
+    
+    if ! confirm "Download ${model} now?"; then
+        echo ""
+        echo "You can download a model later with:"
+        echo -e "  ${CYAN}ollama pull ${model}${NC}"
+        return 0
+    fi
+
+    info "Pulling ${model}... (this may take a few minutes)"
+    
+    # Start ollama serve in background if not running
+    if ! pgrep -x "ollama" > /dev/null 2>&1; then
+        ollama serve > /dev/null 2>&1 &
+        sleep 2
+    fi
+    
+    if ollama pull "${model}"; then
+        ok "Model ${model} ready"
+        return 0
+    else
+        warn "Failed to pull ${model}"
+        echo "You can try again later with: ollama pull ${model}"
+        return 1
+    fi
+}
+
+setup_ollama() {
+    section "Ollama (LLM Backend)"
+
+    if check_ollama; then
+        # Already installed - check for models
+        local models
+        models=$(ollama list 2>/dev/null | tail -n +2 | wc -l)
+        
+        if [ "$models" -gt 0 ]; then
+            ok "Ollama has ${models} model(s) installed"
+            ollama list 2>/dev/null | tail -n +2 | head -5 | while read -r line; do
+                echo -e "  ${DIM}${line}${NC}"
+            done
+        else
+            warn "Ollama installed but no models found"
+            pull_default_model "llama3.2"
+        fi
+    else
+        # Not installed - offer to install
+        if install_ollama; then
+            pull_default_model "llama3.2"
+        fi
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # Hecate Daemon Setup (Docker Compose)
 # -----------------------------------------------------------------------------
 
@@ -760,6 +861,13 @@ show_summary() {
     echo -e "  ${BOLD}hecate-tui${NC}   - Terminal UI    ${DIM}${BIN_DIR}/hecate-tui${NC}"
     echo -e "  ${BOLD}daemon${NC}       - Docker Compose ${DIM}${INSTALL_DIR}/docker-compose.yml${NC}"
     echo -e "  ${BOLD}skills${NC}       - Claude Code    ${DIM}~/.claude/HECATE_SKILLS.md${NC}"
+    
+    # Show Ollama status
+    if command_exists ollama; then
+        local model_count
+        model_count=$(ollama list 2>/dev/null | tail -n +2 | wc -l)
+        echo -e "  ${BOLD}ollama${NC}       - LLM backend    ${DIM}${model_count} model(s)${NC}"
+    fi
     echo ""
     echo -e "${BOLD}Commands:${NC}"
     echo ""
@@ -767,6 +875,9 @@ show_summary() {
     echo -e "  ${CYAN}hecate logs${NC}      - View daemon logs"
     echo -e "  ${CYAN}hecate identity${NC}  - Show identity"
     echo -e "  ${CYAN}hecate-tui${NC}       - Launch terminal UI"
+    if command_exists ollama; then
+        echo -e "  ${CYAN}ollama list${NC}      - Show available models"
+    fi
     echo ""
     echo "API endpoint: http://localhost:4444"
     echo "Network endpoint: http://${local_ip}:4444"
@@ -790,10 +901,12 @@ show_help() {
     echo ""
     echo "Prerequisites:"
     echo "  - Docker (will be installed if missing)"
+    echo "  - Ollama (optional, for LLM features)"
     echo ""
     echo "What gets installed:"
     echo "  - hecate-daemon via Docker Compose"
     echo "  - hecate-tui native binary (Go, static)"
+    echo "  - Ollama + default model (optional)"
     echo "  - Watchtower for auto-updates"
     echo "  - Claude Code skills"
     echo ""
@@ -816,6 +929,7 @@ main() {
 
     echo "This installer will set up:"
     echo "  • Docker (if not installed)"
+    echo "  • Ollama (optional, for LLM features)"
     echo "  • Hecate daemon (via Docker Compose)"
     echo "  • Hecate TUI (native binary)"
     echo "  • Watchtower (auto-updates)"
@@ -828,6 +942,7 @@ main() {
     fi
 
     ensure_docker
+    setup_ollama
     setup_daemon
     install_tui
     install_cli_wrapper
