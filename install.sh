@@ -567,13 +567,17 @@ init_identity() {
 
     if echo "$result" | grep -q '"ok":true'; then
         local mri
-        mri=$(echo "$result" | jq -r '.mri // empty')
-        ok "Identity created: ${mri}"
+        mri=$(echo "$result" | grep -o '"mri":"[^"]*"' | cut -d'"' -f4)
+        ok "Identity created: ${mri:-unknown}"
     elif echo "$result" | grep -q 'already_initialized'; then
         ok "Identity already exists"
     else
         error "Failed to initialize identity:"
-        echo "$result" | jq . 2>/dev/null || echo "$result"
+        if command_exists jq; then
+            echo "$result" | jq .
+        else
+            echo "$result"
+        fi
         warn "Continuing anyway..."
     fi
 }
