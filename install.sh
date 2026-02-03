@@ -26,6 +26,12 @@ HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:main"
 # Flags
 HEADLESS=false
 PAIRING_SUCCESS=false
+PRESET_ROLE=""
+
+# Node roles
+ROLE_WORKSTATION=false
+ROLE_SERVICES=false
+ROLE_AI=false
 
 # Colors
 if [ -t 1 ]; then
@@ -141,6 +147,88 @@ show_banner() {
         echo "    Mesh networking for AI agents"
         echo ""
     fi
+}
+
+# -----------------------------------------------------------------------------
+# Node Role Selection
+# -----------------------------------------------------------------------------
+
+select_node_roles() {
+    section "Node Role Selection"
+
+    echo "What will this node be used for?"
+    echo -e "${DIM}Select multiple roles by entering numbers separated by spaces${NC}"
+    echo ""
+    echo -e "  ${BOLD}1)${NC} Workstation     ${DIM}- TUI + Claude skills for development${NC}"
+    echo -e "  ${BOLD}2)${NC} Services        ${DIM}- Host capabilities on the mesh${NC}"
+    echo -e "  ${BOLD}3)${NC} AI Provider     ${DIM}- Serve LLM models (installs Ollama)${NC}"
+    echo -e "  ${BOLD}4)${NC} Full            ${DIM}- All of the above${NC}"
+    echo ""
+
+    # Handle preset roles from CLI
+    if [ -n "$PRESET_ROLE" ]; then
+        parse_preset_roles "$PRESET_ROLE"
+        show_selected_roles
+        return
+    fi
+
+    # Handle headless mode - default to workstation
+    if [ "$HEADLESS" = true ]; then
+        ROLE_WORKSTATION=true
+        info "Headless mode: defaulting to workstation"
+        return
+    fi
+
+    echo -en "  Enter choices (e.g., ${BOLD}1 3${NC} or ${BOLD}4${NC}): " > /dev/tty
+    read -r choices < /dev/tty
+
+    # Parse choices
+    for choice in $choices; do
+        case "$choice" in
+            1) ROLE_WORKSTATION=true ;;
+            2) ROLE_SERVICES=true ;;
+            3) ROLE_AI=true ;;
+            4)
+                ROLE_WORKSTATION=true
+                ROLE_SERVICES=true
+                ROLE_AI=true
+                ;;
+        esac
+    done
+
+    # Default to workstation if nothing selected
+    if [ "$ROLE_WORKSTATION" = false ] && [ "$ROLE_SERVICES" = false ] && [ "$ROLE_AI" = false ]; then
+        ROLE_WORKSTATION=true
+        warn "No role selected, defaulting to workstation"
+    fi
+
+    echo ""
+    show_selected_roles
+}
+
+parse_preset_roles() {
+    local roles="$1"
+    local IFS=',+'
+    for role in $roles; do
+        case "$role" in
+            workstation|dev) ROLE_WORKSTATION=true ;;
+            services|server) ROLE_SERVICES=true ;;
+            ai|provider|llm) ROLE_AI=true ;;
+            full|all)
+                ROLE_WORKSTATION=true
+                ROLE_SERVICES=true
+                ROLE_AI=true
+                ;;
+        esac
+    done
+}
+
+show_selected_roles() {
+    local roles=()
+    [ "$ROLE_WORKSTATION" = true ] && roles+=("workstation")
+    [ "$ROLE_SERVICES" = true ] && roles+=("services")
+    [ "$ROLE_AI" = true ] && roles+=("ai-provider")
+    ok "Selected roles: ${roles[*]}"
 }
 
 # -----------------------------------------------------------------------------
@@ -314,6 +402,11 @@ pull_default_model() {
 }
 
 setup_ollama() {
+    # Only install Ollama for AI provider role
+    if [ "$ROLE_AI" = false ]; then
+        return
+    fi
+
     section "Ollama (LLM Backend)"
 
     if check_ollama; then
@@ -413,6 +506,12 @@ EOF
 # -----------------------------------------------------------------------------
 
 install_tui() {
+    # TUI is primarily for workstation role
+    if [ "$ROLE_WORKSTATION" = false ]; then
+        info "Skipping TUI (not a workstation role)"
+        return
+    fi
+
     section "Installing Hecate TUI"
 
     local os arch version url
@@ -607,6 +706,12 @@ WRAPPER
 # -----------------------------------------------------------------------------
 
 install_skills() {
+    # Skills are for workstation role
+    if [ "$ROLE_WORKSTATION" = false ]; then
+        info "Skipping Claude skills (not a workstation role)"
+        return
+    fi
+
     section "Installing Claude Code Skills"
 
     local claude_dir="$HOME/.claude"
@@ -896,19 +1001,25 @@ show_help() {
     echo "Usage: curl -fsSL https://macula.io/hecate/install.sh | bash"
     echo ""
     echo "Options:"
-    echo "  --headless   Non-interactive mode"
-    echo "  --help       Show this help"
+    echo "  --role=ROLES  Set node roles (workstation,services,ai,full)"
+    echo "  --headless    Non-interactive mode (defaults to workstation)"
+    echo "  --help        Show this help"
     echo ""
-    echo "Prerequisites:"
-    echo "  - Docker (will be installed if missing)"
-    echo "  - Ollama (optional, for LLM features)"
+    echo "Node Roles:"
+    echo "  workstation   Developer workstation (TUI + Claude skills)"
+    echo "  services      Services host (API exposed to network)"
+    echo "  ai            AI Provider (installs Ollama, serves LLM)"
+    echo "  full          All roles combined"
     echo ""
-    echo "What gets installed:"
-    echo "  - hecate-daemon via Docker Compose"
-    echo "  - hecate-tui native binary (Go, static)"
-    echo "  - Ollama + default model (optional)"
-    echo "  - Watchtower for auto-updates"
-    echo "  - Claude Code skills"
+    echo "Examples:"
+    echo "  # Interactive (recommended)"
+    echo "  curl -fsSL https://macula.io/hecate/install.sh | bash"
+    echo ""
+    echo "  # AI Provider node"
+    echo "  curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=ai"
+    echo ""
+    echo "  # Workstation + AI Provider"
+    echo "  curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=workstation,ai"
     echo ""
 }
 
@@ -921,19 +1032,22 @@ main() {
     for arg in "$@"; do
         case "$arg" in
             --headless) HEADLESS=true ;;
+            --role=*) PRESET_ROLE="${arg#*=}" ;;
             --help|-h) show_help; exit 0 ;;
         esac
     done
 
     show_banner
+    select_node_roles
 
+    echo ""
     echo "This installer will set up:"
     echo "  • Docker (if not installed)"
-    echo "  • Ollama (optional, for LLM features)"
     echo "  • Hecate daemon (via Docker Compose)"
-    echo "  • Hecate TUI (native binary)"
+    [ "$ROLE_AI" = true ] && echo "  • Ollama + models (AI Provider)"
+    [ "$ROLE_WORKSTATION" = true ] && echo "  • Hecate TUI (native binary)"
+    [ "$ROLE_WORKSTATION" = true ] && echo "  • Claude Code skills"
     echo "  • Watchtower (auto-updates)"
-    echo "  • Claude Code skills"
     echo ""
 
     if ! confirm "Continue with installation?" "y"; then
@@ -942,7 +1056,7 @@ main() {
     fi
 
     ensure_docker
-    setup_ollama
+    setup_ollama  # Only runs if ROLE_AI=true
     setup_daemon
     install_tui
     install_cli_wrapper
