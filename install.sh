@@ -786,20 +786,19 @@ services:
       retries: 3
       start_period: 10s
 
-  # NOTE: Watchtower disabled due to Docker API version mismatch
-  # (watchtower uses API 1.25, modern Docker requires 1.44+)
-  # Use 'hecate update' to manually update when needed
-  # watchtower:
-  #   image: containrrr/watchtower
-  #   container_name: hecate-watchtower
-  #   restart: unless-stopped
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #   environment:
-  #     - WATCHTOWER_CLEANUP=true
-  #     - WATCHTOWER_POLL_INTERVAL=3600
-  #     - WATCHTOWER_INCLUDE_STOPPED=true
-  #   command: hecate-daemon
+  # Auto-update via Watchtower (LinuxServer fork for modern Docker API)
+  # Manual update also available: hecate update
+  watchtower:
+    image: lscr.io/linuxserver/watchtower:latest
+    container_name: hecate-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=3600  # Check every hour
+      - WATCHTOWER_INCLUDE_STOPPED=true
+    command: hecate-daemon  # Only watch hecate container
 EOF
 
     # Create default config
@@ -1346,7 +1345,7 @@ show_summary() {
     echo "API endpoint: http://localhost:4444"
     echo "Network endpoint: http://${local_ip}:4444"
     echo ""
-    echo -e "${DIM}Run 'hecate update' to check for updates${NC}"
+    echo -e "${DIM}Auto-updates via Watchtower (hourly) • Manual: hecate update${NC}"
     echo ""
 }
 
@@ -1407,6 +1406,7 @@ main() {
     [ "$ROLE_AI" = true ] && echo "  • Ollama + models (AI Provider)"
     [ "$ROLE_WORKSTATION" = true ] && echo "  • Hecate TUI (native binary)"
     [ "$ROLE_WORKSTATION" = true ] && echo "  • Hecate Skills"
+    echo "  • Watchtower (auto-updates)"
     echo ""
 
     if ! confirm "Continue with installation?" "y"; then
