@@ -12,3 +12,6 @@ Thumbs.db
 # Local testing
 .env
 *.local
+
+# Local inventory
+ansible/inventory.ini
