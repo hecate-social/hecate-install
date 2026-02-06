@@ -1610,15 +1610,28 @@ EOF
             sudo systemctl daemon-reload
             sudo systemctl enable ollama
             sudo systemctl start ollama
-            ok "Ollama service created and started (0.0.0.0:11434)"
+            sleep 2
+            # Check if service started
+            if sudo systemctl is-active --quiet ollama; then
+                ok "Ollama service created and started (0.0.0.0:11434)"
+            else
+                warn "Ollama service failed to start"
+                echo ""
+                echo "Check logs with: sudo journalctl -u ollama -n 20"
+                echo ""
+                sudo journalctl -u ollama -n 10 --no-pager 2>/dev/null || true
+                return
+            fi
         fi
     else
         warn "systemd not available"
-        info "Set OLLAMA_HOST=0.0.0.0 manually before starting Ollama"
+        info "Starting Ollama manually..."
+        OLLAMA_HOST=0.0.0.0 nohup "${ollama_bin}" serve > /tmp/ollama.log 2>&1 &
+        sleep 3
     fi
 
-    # Wait for Ollama to be ready
-    info "Waiting for Ollama..."
+    # Wait for Ollama API to be ready
+    info "Waiting for Ollama API..."
     local retries=30
     while [ $retries -gt 0 ]; do
         if curl -s http://localhost:11434/api/tags &>/dev/null; then
@@ -1630,7 +1643,9 @@ EOF
     done
 
     if [ $retries -eq 0 ]; then
-        warn "Ollama did not start in time, check: sudo journalctl -u ollama"
+        warn "Ollama API not responding after 30s"
+        info "Check: sudo journalctl -u ollama"
+        return
     fi
 
     select_ollama_models
