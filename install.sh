@@ -292,22 +292,23 @@ configure_firewall() {
         return
     fi
 
-    # Firewall found but not active
+    # Show firewall status
     if [ "$fw_active" = false ]; then
-        ok "Firewall (${fw_tool}) installed but not active"
-        echo ""
-        echo "For reference, these ports will be needed if enabled:"
-        show_required_ports
-        return
+        info "Firewall (${fw_tool}) installed but not active"
+    else
+        info "Active firewall: ${fw_tool}"
     fi
-
-    # Active firewall - offer configuration
-    info "Active firewall: ${fw_tool}"
     echo ""
     show_required_ports
     echo ""
 
-    if ! confirm "Configure firewall rules?" "y"; then
+    # Offer to configure even if inactive (rules will apply when enabled)
+    local prompt="Configure firewall rules?"
+    if [ "$fw_active" = false ]; then
+        prompt="Add firewall rules? (will apply when ${fw_tool} is enabled)"
+    fi
+
+    if ! confirm "$prompt" "y"; then
         warn "Skipping firewall configuration"
         return
     fi
