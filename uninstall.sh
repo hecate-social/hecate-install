@@ -380,18 +380,36 @@ if command_exists ollama || [ -d "$OLLAMA_MODELS_DIR" ]; then
             ok "Removed /usr/local/bin/ollama"
         fi
 
-        # Remove Ollama service file
+        # Remove Ollama service files
         if [ -f /etc/systemd/system/ollama.service ]; then
             sudo rm -f /etc/systemd/system/ollama.service
-            sudo systemctl daemon-reload 2>/dev/null || true
             ok "Removed Ollama systemd service"
         fi
-
-        # Remove models directory
-        if [ -d "$OLLAMA_MODELS_DIR" ]; then
-            rm -rf "$OLLAMA_MODELS_DIR"
-            ok "Removed ${OLLAMA_MODELS_DIR} (${OLLAMA_MODELS_SIZE} freed)"
+        if [ -d /etc/systemd/system/ollama.service.d ]; then
+            sudo rm -rf /etc/systemd/system/ollama.service.d
+            ok "Removed Ollama service overrides"
         fi
+        sudo systemctl daemon-reload 2>/dev/null || true
+
+        # Remove models directory (may be owned by root)
+        if [ -d "$OLLAMA_MODELS_DIR" ]; then
+            info "Removing models (${OLLAMA_MODELS_SIZE})..."
+            if rm -rf "$OLLAMA_MODELS_DIR" 2>/dev/null; then
+                ok "Removed ${OLLAMA_MODELS_DIR}"
+            else
+                info "Some files owned by root, using sudo..."
+                sudo rm -rf "$OLLAMA_MODELS_DIR"
+                ok "Removed ${OLLAMA_MODELS_DIR}"
+            fi
+        fi
+
+        # Also check /usr/share/ollama (some installs put models here)
+        if [ -d /usr/share/ollama ]; then
+            sudo rm -rf /usr/share/ollama
+            ok "Removed /usr/share/ollama"
+        fi
+
+        ok "Ollama completely removed (${OLLAMA_MODELS_SIZE} freed)"
     else
         warn "Kept Ollama installation"
         echo "To remove manually later:"
