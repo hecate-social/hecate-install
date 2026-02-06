@@ -142,7 +142,7 @@ download_file() {
 
 show_banner() {
     echo ""
-    echo -e "${MAGENTA}${BOLD}    🗝️  H E C A T E  🗝️${NC}"
+    echo -e "${MAGENTA}${BOLD}    🔥  H E C A T E  🔥${NC}"
     echo ""
     echo -e "${DIM}    European Decentralized AI Infrastructure${NC}"
     echo -e "${DIM}    Now powered by k3s + GitOps${NC}"
@@ -1320,28 +1320,58 @@ run_inference_install() {
 install_ollama_server() {
     section "Installing Ollama Server"
 
-    # Install Ollama
-    if ! command_exists ollama; then
+    local ollama_bin=""
+
+    # Find or install Ollama
+    if command_exists ollama; then
+        ollama_bin=$(command -v ollama)
+        ok "Ollama already installed: ${ollama_bin}"
+    else
         info "Installing Ollama..."
         curl -fsSL https://ollama.com/install.sh | sh
-    else
-        ok "Ollama already installed"
+        ollama_bin=$(command -v ollama)
     fi
 
     # Configure Ollama to listen on all interfaces
     info "Configuring Ollama for network access..."
 
     if command_exists systemctl; then
-        # Create systemd override
-        sudo mkdir -p /etc/systemd/system/ollama.service.d
-        cat << 'EOF' | sudo tee /etc/systemd/system/ollama.service.d/override.conf > /dev/null
+        # Check if ollama.service exists
+        if systemctl list-unit-files ollama.service &>/dev/null && \
+           systemctl list-unit-files ollama.service | grep -q ollama; then
+            # Service exists, add override
+            sudo mkdir -p /etc/systemd/system/ollama.service.d
+            cat << 'EOF' | sudo tee /etc/systemd/system/ollama.service.d/override.conf > /dev/null
 [Service]
 Environment="OLLAMA_HOST=0.0.0.0"
 EOF
-        sudo systemctl daemon-reload
-        sudo systemctl enable ollama
-        sudo systemctl restart ollama
-        ok "Ollama configured for network access (0.0.0.0:11434)"
+            sudo systemctl daemon-reload
+            sudo systemctl enable ollama
+            sudo systemctl restart ollama
+            ok "Ollama configured for network access (0.0.0.0:11434)"
+        else
+            # No service file - create one
+            info "Creating systemd service for Ollama..."
+            cat << EOF | sudo tee /etc/systemd/system/ollama.service > /dev/null
+[Unit]
+Description=Ollama LLM Server
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${ollama_bin} serve
+Environment="OLLAMA_HOST=0.0.0.0"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            sudo systemctl daemon-reload
+            sudo systemctl enable ollama
+            sudo systemctl start ollama
+            ok "Ollama service created and started (0.0.0.0:11434)"
+        fi
     else
         warn "systemd not available"
         info "Set OLLAMA_HOST=0.0.0.0 manually before starting Ollama"
@@ -1358,6 +1388,10 @@ EOF
         retries=$((retries - 1))
         sleep 1
     done
+
+    if [ $retries -eq 0 ]; then
+        warn "Ollama did not start in time, check: sudo journalctl -u ollama"
+    fi
 
     # Pull a default model
     if confirm "Pull llama3.2 model (2GB)?" "y"; then
