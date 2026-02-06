@@ -133,9 +133,23 @@ if command_exists docker && docker ps -a --format '{{.Names}}' 2>/dev/null | gre
     echo -e "  ${YELLOW}!${NC} Legacy Docker containers found"
 fi
 
+# Check Ollama (inference node)
+FOUND_OLLAMA=false
+if command_exists ollama || [ -d "${HOME}/.ollama" ]; then
+    FOUND_OLLAMA=true
+    if command_exists ollama; then
+        ollama_version=$(ollama --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
+        echo -e "  ${GREEN}+${NC} Ollama installed: v${ollama_version}"
+    fi
+    if [ -d "${HOME}/.ollama" ]; then
+        ollama_size=$(du -sh "${HOME}/.ollama" 2>/dev/null | cut -f1 || echo "unknown")
+        echo -e "  ${GREEN}+${NC} Ollama models: ${ollama_size}"
+    fi
+fi
+
 # Check if anything found
 if [ "$FOUND_K3S" = false ] && [ "$FOUND_CLI" = false ] && [ "$FOUND_TUI" = false ] && \
-   [ "$FOUND_LEGACY_COMPOSE" = false ] && [ "$FOUND_GITOPS" = false ]; then
+   [ "$FOUND_LEGACY_COMPOSE" = false ] && [ "$FOUND_GITOPS" = false ] && [ "$FOUND_OLLAMA" = false ]; then
     echo ""
     warn "No Hecate installation found"
     exit 0
