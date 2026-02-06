@@ -142,9 +142,13 @@ download_file() {
 
 show_banner() {
     echo ""
-    echo -e "${MAGENTA}${BOLD}    🔥🗝️🔥  H E C A T E  🔥🗝️🔥${NC}"
-    echo ""
-    echo -e "${DIM}    Powered by Macula${NC}"
+    echo "    🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺"
+    echo -e "    🇪🇺                                  🇪🇺"
+    echo -e "    🇪🇺  ${MAGENTA}${BOLD}🔥🗝️🔥  H E C A T E  🔥🗝️🔥${NC}  🇪🇺"
+    echo -e "    🇪🇺                                  🇪🇺"
+    echo -e "    🇪🇺       ${DIM}Powered by Macula${NC}        🇪🇺"
+    echo -e "    🇪🇺                                  🇪🇺"
+    echo "    🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺"
     echo ""
 }
 
