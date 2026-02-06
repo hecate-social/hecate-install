@@ -1023,20 +1023,69 @@ select_ollama_models() {
         return
     fi
 
+    # Wait for Ollama to be ready
+    info "Waiting for Ollama server..."
+    local retries=30
+    while [ $retries -gt 0 ]; do
+        if curl -s http://localhost:11434/api/tags &>/dev/null; then
+            ok "Ollama server ready"
+            break
+        fi
+        retries=$((retries - 1))
+        sleep 1
+    done
+
+    if [ $retries -eq 0 ]; then
+        warn "Ollama server not responding"
+        info "Start manually with: ollama serve"
+        return
+    fi
+
     echo ""
     echo "Which models would you like to pull?"
     echo ""
-    echo -e "  ${BOLD}1)${NC} llama3.2        ${DIM}- 2GB, fast general-purpose${NC}"
-    echo -e "  ${BOLD}2)${NC} llama3.2:1b     ${DIM}- 1GB, lightweight${NC}"
-    echo -e "  ${BOLD}3)${NC} mistral         ${DIM}- 4GB, good reasoning${NC}"
-    echo -e "  ${BOLD}4)${NC} codellama       ${DIM}- 4GB, code generation${NC}"
-    echo -e "  ${BOLD}5)${NC} phi3            ${DIM}- 2GB, Microsoft's compact model${NC}"
-    echo -e "  ${BOLD}6)${NC} gemma2          ${DIM}- 5GB, Google's latest${NC}"
-    echo -e "  ${BOLD}7)${NC} qwen2.5         ${DIM}- 4GB, multilingual${NC}"
-    echo -e "  ${BOLD}8)${NC} deepseek-r1     ${DIM}- 4GB, reasoning model${NC}"
-    echo -e "  ${BOLD}s)${NC} Skip            ${DIM}- Don't pull any models${NC}"
+    echo -e "${BOLD}General Purpose:${NC}"
+    echo -e "  ${BOLD}1)${NC}  llama3.2        ${DIM}- 2GB, Meta's latest, fast${NC}"
+    echo -e "  ${BOLD}2)${NC}  llama3.2:1b     ${DIM}- 1GB, lightweight${NC}"
+    echo -e "  ${BOLD}3)${NC}  llama3.3        ${DIM}- 43GB, flagship quality${NC}"
+    echo -e "  ${BOLD}4)${NC}  mistral         ${DIM}- 4GB, excellent reasoning${NC}"
+    echo -e "  ${BOLD}5)${NC}  mixtral         ${DIM}- 26GB, MoE powerhouse${NC}"
     echo ""
-    echo -e "${DIM}Enter choices separated by spaces (e.g., 1 3 4):${NC}"
+    echo -e "${BOLD}Coding:${NC}"
+    echo -e "  ${BOLD}6)${NC}  codellama       ${DIM}- 4GB, code generation${NC}"
+    echo -e "  ${BOLD}7)${NC}  codellama:34b   ${DIM}- 19GB, advanced coding${NC}"
+    echo -e "  ${BOLD}8)${NC}  deepseek-coder  ${DIM}- 1GB, fast code completion${NC}"
+    echo -e "  ${BOLD}9)${NC}  qwen2.5-coder   ${DIM}- 4GB, multilingual code${NC}"
+    echo -e "  ${BOLD}10)${NC} starcoder2      ${DIM}- 2GB, code infill${NC}"
+    echo ""
+    echo -e "${BOLD}Reasoning:${NC}"
+    echo -e "  ${BOLD}11)${NC} deepseek-r1     ${DIM}- 4GB, step-by-step reasoning${NC}"
+    echo -e "  ${BOLD}12)${NC} deepseek-r1:70b ${DIM}- 43GB, flagship reasoning${NC}"
+    echo -e "  ${BOLD}13)${NC} qwq             ${DIM}- 20GB, math/logic specialist${NC}"
+    echo ""
+    echo -e "${BOLD}Compact & Fast:${NC}"
+    echo -e "  ${BOLD}14)${NC} phi3            ${DIM}- 2GB, Microsoft's compact${NC}"
+    echo -e "  ${BOLD}15)${NC} phi3:medium     ${DIM}- 8GB, balanced${NC}"
+    echo -e "  ${BOLD}16)${NC} gemma2          ${DIM}- 5GB, Google's efficient${NC}"
+    echo -e "  ${BOLD}17)${NC} gemma2:27b      ${DIM}- 16GB, larger Google${NC}"
+    echo ""
+    echo -e "${BOLD}Multilingual:${NC}"
+    echo -e "  ${BOLD}18)${NC} qwen2.5         ${DIM}- 4GB, Chinese/English${NC}"
+    echo -e "  ${BOLD}19)${NC} qwen2.5:32b     ${DIM}- 20GB, advanced multilingual${NC}"
+    echo -e "  ${BOLD}20)${NC} aya             ${DIM}- 5GB, 100+ languages${NC}"
+    echo ""
+    echo -e "${BOLD}Vision:${NC}"
+    echo -e "  ${BOLD}21)${NC} llava           ${DIM}- 5GB, image understanding${NC}"
+    echo -e "  ${BOLD}22)${NC} llava:34b       ${DIM}- 20GB, advanced vision${NC}"
+    echo -e "  ${BOLD}23)${NC} bakllava        ${DIM}- 5GB, visual reasoning${NC}"
+    echo ""
+    echo -e "${BOLD}Embedding:${NC}"
+    echo -e "  ${BOLD}24)${NC} nomic-embed-text ${DIM}- 274MB, text embeddings${NC}"
+    echo -e "  ${BOLD}25)${NC} mxbai-embed-large ${DIM}- 670MB, high quality${NC}"
+    echo ""
+    echo -e "  ${BOLD}s)${NC}  Skip            ${DIM}- Don't pull any models${NC}"
+    echo ""
+    echo -e "${DIM}Enter choices separated by spaces (e.g., 1 6 11):${NC}"
     echo -en "  > " > /dev/tty
     read -r model_choices < /dev/tty
 
@@ -1047,15 +1096,32 @@ select_ollama_models() {
 
     for choice in $model_choices; do
         case "$choice" in
-            1) pull_model "llama3.2" ;;
-            2) pull_model "llama3.2:1b" ;;
-            3) pull_model "mistral" ;;
-            4) pull_model "codellama" ;;
-            5) pull_model "phi3" ;;
-            6) pull_model "gemma2" ;;
-            7) pull_model "qwen2.5" ;;
-            8) pull_model "deepseek-r1" ;;
-            *) warn "Unknown choice: $choice" ;;
+            1)  pull_model "llama3.2" ;;
+            2)  pull_model "llama3.2:1b" ;;
+            3)  pull_model "llama3.3" ;;
+            4)  pull_model "mistral" ;;
+            5)  pull_model "mixtral" ;;
+            6)  pull_model "codellama" ;;
+            7)  pull_model "codellama:34b" ;;
+            8)  pull_model "deepseek-coder" ;;
+            9)  pull_model "qwen2.5-coder" ;;
+            10) pull_model "starcoder2" ;;
+            11) pull_model "deepseek-r1" ;;
+            12) pull_model "deepseek-r1:70b" ;;
+            13) pull_model "qwq" ;;
+            14) pull_model "phi3" ;;
+            15) pull_model "phi3:medium" ;;
+            16) pull_model "gemma2" ;;
+            17) pull_model "gemma2:27b" ;;
+            18) pull_model "qwen2.5" ;;
+            19) pull_model "qwen2.5:32b" ;;
+            20) pull_model "aya" ;;
+            21) pull_model "llava" ;;
+            22) pull_model "llava:34b" ;;
+            23) pull_model "bakllava" ;;
+            24) pull_model "nomic-embed-text" ;;
+            25) pull_model "mxbai-embed-large" ;;
+            *)  warn "Unknown choice: $choice" ;;
         esac
     done
 }
