@@ -363,53 +363,81 @@ if command_exists ollama || [ -d "$OLLAMA_MODELS_DIR" ]; then
     fi
     echo ""
 
-    if confirm "Remove Ollama and downloaded models?"; then
+    if confirm "Remove Ollama and downloaded models?" "y"; then
         # Stop Ollama service if running
-        if command_exists systemctl && systemctl is-active --quiet ollama 2>/dev/null; then
-            info "Stopping Ollama service..."
-            sudo systemctl stop ollama 2>/dev/null || true
-            sudo systemctl disable ollama 2>/dev/null || true
+        if command_exists systemctl; then
+            if systemctl is-active --quiet ollama 2>/dev/null; then
+                info "Stopping Ollama service..."
+                sudo systemctl stop ollama 2>/dev/null || true
+            fi
+            if systemctl is-enabled --quiet ollama 2>/dev/null; then
+                sudo systemctl disable ollama 2>/dev/null || true
+            fi
         fi
 
         # Kill any running ollama process
-        pkill -f ollama 2>/dev/null || true
+        info "Stopping Ollama processes..."
+        pkill -f "ollama" 2>/dev/null || true
+        sleep 1
 
-        # Remove Ollama binary
-        if [ -f /usr/local/bin/ollama ]; then
-            sudo rm -f /usr/local/bin/ollama
-            ok "Removed /usr/local/bin/ollama"
+        # Find and remove Ollama binary (could be in different locations)
+        local ollama_bin=""
+        for path in /usr/local/bin/ollama /usr/bin/ollama; do
+            if [ -f "$path" ]; then
+                ollama_bin="$path"
+                break
+            fi
+        done
+        if command_exists ollama; then
+            ollama_bin=$(command -v ollama)
+        fi
+
+        if [ -n "$ollama_bin" ] && [ -f "$ollama_bin" ]; then
+            info "Removing ${ollama_bin}..."
+            sudo rm -f "$ollama_bin"
+            ok "Removed ${ollama_bin}"
+        else
+            info "Ollama binary not found (already removed or installed via package manager)"
         fi
 
         # Remove Ollama service files
+        local removed_service=false
         if [ -f /etc/systemd/system/ollama.service ]; then
             sudo rm -f /etc/systemd/system/ollama.service
+            removed_service=true
             ok "Removed Ollama systemd service"
         fi
         if [ -d /etc/systemd/system/ollama.service.d ]; then
             sudo rm -rf /etc/systemd/system/ollama.service.d
+            removed_service=true
             ok "Removed Ollama service overrides"
         fi
-        sudo systemctl daemon-reload 2>/dev/null || true
+        if [ "$removed_service" = true ]; then
+            sudo systemctl daemon-reload 2>/dev/null || true
+        fi
 
-        # Remove models directory (may be owned by root)
-        if [ -d "$OLLAMA_MODELS_DIR" ]; then
-            info "Removing models (${OLLAMA_MODELS_SIZE})..."
-            if rm -rf "$OLLAMA_MODELS_DIR" 2>/dev/null; then
-                ok "Removed ${OLLAMA_MODELS_DIR}"
-            else
-                info "Some files owned by root, using sudo..."
-                sudo rm -rf "$OLLAMA_MODELS_DIR"
-                ok "Removed ${OLLAMA_MODELS_DIR}"
+        # Remove models from all possible locations
+        local removed_models=false
+        for models_dir in "${HOME}/.ollama" "/usr/share/ollama" "/var/lib/ollama"; do
+            if [ -d "$models_dir" ]; then
+                local dir_size
+                dir_size=$(du -sh "$models_dir" 2>/dev/null | cut -f1 || echo "unknown")
+                info "Removing ${models_dir} (${dir_size})..."
+                if sudo rm -rf "$models_dir"; then
+                    ok "Removed ${models_dir}"
+                    removed_models=true
+                else
+                    warn "Failed to remove ${models_dir}"
+                fi
             fi
+        done
+
+        if [ "$removed_models" = false ]; then
+            info "No model directories found"
         fi
 
-        # Also check /usr/share/ollama (some installs put models here)
-        if [ -d /usr/share/ollama ]; then
-            sudo rm -rf /usr/share/ollama
-            ok "Removed /usr/share/ollama"
-        fi
-
-        ok "Ollama completely removed (${OLLAMA_MODELS_SIZE} freed)"
+        echo ""
+        ok "Ollama cleanup complete"
     else
         warn "Kept Ollama installation"
         echo "To remove manually later:"
