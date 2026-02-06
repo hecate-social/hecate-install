@@ -228,17 +228,162 @@ detect_hardware() {
 }
 
 # -----------------------------------------------------------------------------
-# k3s Role Selection
+# Firewall Configuration
+# -----------------------------------------------------------------------------
+
+configure_firewall() {
+    section "Firewall Configuration"
+
+    # Detect firewall tool
+    local fw_tool=""
+    if command_exists ufw; then
+        fw_tool="ufw"
+    elif command_exists firewall-cmd; then
+        fw_tool="firewalld"
+    else
+        warn "No firewall detected (ufw/firewalld)"
+        info "Ensure these ports are open manually:"
+        show_required_ports
+        return
+    fi
+
+    info "Detected firewall: ${fw_tool}"
+    echo ""
+    show_required_ports
+    echo ""
+
+    if ! confirm "Configure firewall rules?" "y"; then
+        warn "Skipping firewall configuration"
+        return
+    fi
+
+    case "$fw_tool" in
+        ufw)
+            configure_ufw
+            ;;
+        firewalld)
+            configure_firewalld
+            ;;
+    esac
+}
+
+show_required_ports() {
+    case "$K3S_ROLE" in
+        inference)
+            echo "Required ports for Inference node:"
+            echo -e "  ${CYAN}11434/tcp${NC}  - Ollama API"
+            echo -e "  ${CYAN}22/tcp${NC}     - SSH"
+            ;;
+        standalone)
+            echo "Required ports for Standalone node:"
+            echo -e "  ${CYAN}4433/udp${NC}   - Macula mesh (QUIC)"
+            echo -e "  ${CYAN}22/tcp${NC}     - SSH"
+            ;;
+        server)
+            echo "Required ports for Server node:"
+            echo -e "  ${CYAN}6443/tcp${NC}   - k3s API (for agents)"
+            echo -e "  ${CYAN}4433/udp${NC}   - Macula mesh (QUIC)"
+            echo -e "  ${CYAN}4369/tcp${NC}   - EPMD (Erlang)"
+            echo -e "  ${CYAN}9100/tcp${NC}   - Erlang distribution"
+            echo -e "  ${CYAN}8472/udp${NC}   - Flannel VXLAN"
+            echo -e "  ${CYAN}10250/tcp${NC}  - Kubelet"
+            echo -e "  ${CYAN}22/tcp${NC}     - SSH"
+            ;;
+        agent)
+            echo "Required ports for Agent node:"
+            echo -e "  ${CYAN}4433/udp${NC}   - Macula mesh (QUIC)"
+            echo -e "  ${CYAN}4369/tcp${NC}   - EPMD (Erlang)"
+            echo -e "  ${CYAN}9100/tcp${NC}   - Erlang distribution"
+            echo -e "  ${CYAN}8472/udp${NC}   - Flannel VXLAN"
+            echo -e "  ${CYAN}10250/tcp${NC}  - Kubelet"
+            echo -e "  ${CYAN}22/tcp${NC}     - SSH"
+            ;;
+    esac
+}
+
+configure_ufw() {
+    info "Configuring ufw..."
+
+    # Common: SSH
+    sudo ufw allow ssh
+
+    case "$K3S_ROLE" in
+        inference)
+            sudo ufw allow 11434/tcp comment 'Ollama API'
+            ;;
+        standalone)
+            sudo ufw allow 4433/udp comment 'Macula mesh'
+            ;;
+        server)
+            sudo ufw allow 6443/tcp comment 'k3s API'
+            sudo ufw allow 4433/udp comment 'Macula mesh'
+            sudo ufw allow 4369/tcp comment 'EPMD'
+            sudo ufw allow 9100/tcp comment 'Erlang dist'
+            sudo ufw allow 8472/udp comment 'Flannel VXLAN'
+            sudo ufw allow 10250/tcp comment 'Kubelet'
+            ;;
+        agent)
+            sudo ufw allow 4433/udp comment 'Macula mesh'
+            sudo ufw allow 4369/tcp comment 'EPMD'
+            sudo ufw allow 9100/tcp comment 'Erlang dist'
+            sudo ufw allow 8472/udp comment 'Flannel VXLAN'
+            sudo ufw allow 10250/tcp comment 'Kubelet'
+            ;;
+    esac
+
+    # Enable if not already
+    if ! sudo ufw status | grep -q "Status: active"; then
+        sudo ufw --force enable
+    fi
+
+    sudo ufw reload
+    ok "ufw configured"
+}
+
+configure_firewalld() {
+    info "Configuring firewalld..."
+
+    case "$K3S_ROLE" in
+        inference)
+            sudo firewall-cmd --permanent --add-port=11434/tcp
+            ;;
+        standalone)
+            sudo firewall-cmd --permanent --add-port=4433/udp
+            ;;
+        server)
+            sudo firewall-cmd --permanent --add-port=6443/tcp
+            sudo firewall-cmd --permanent --add-port=4433/udp
+            sudo firewall-cmd --permanent --add-port=4369/tcp
+            sudo firewall-cmd --permanent --add-port=9100/tcp
+            sudo firewall-cmd --permanent --add-port=8472/udp
+            sudo firewall-cmd --permanent --add-port=10250/tcp
+            ;;
+        agent)
+            sudo firewall-cmd --permanent --add-port=4433/udp
+            sudo firewall-cmd --permanent --add-port=4369/tcp
+            sudo firewall-cmd --permanent --add-port=9100/tcp
+            sudo firewall-cmd --permanent --add-port=8472/udp
+            sudo firewall-cmd --permanent --add-port=10250/tcp
+            ;;
+    esac
+
+    sudo firewall-cmd --reload
+    ok "firewalld configured"
+}
+
+# -----------------------------------------------------------------------------
+# Node Role Selection
 # -----------------------------------------------------------------------------
 
 select_k3s_role() {
-    section "Cluster Role Selection"
+    section "Node Role Selection"
 
-    echo "How should this node join the cluster?"
+    echo "What type of node is this?"
     echo ""
     echo -e "  ${BOLD}1)${NC} Standalone     ${DIM}- Single-node cluster (default)${NC}"
     echo -e "  ${BOLD}2)${NC} Server         ${DIM}- Control plane (can add agents later)${NC}"
     echo -e "  ${BOLD}3)${NC} Agent          ${DIM}- Join existing cluster${NC}"
+    echo -e "  ${BOLD}4)${NC} Inference      ${DIM}- Dedicated Ollama server (no k3s)${NC}"
     echo ""
 
     if [ "$HEADLESS" = true ]; then
@@ -265,11 +410,18 @@ select_k3s_role() {
                 fatal "Server URL and token are required for agent mode"
             fi
             ;;
+        4)
+            K3S_ROLE="inference"
+            # Inference mode: just Ollama, no k3s
+            ROLE_AI=true
+            ROLE_WORKSTATION=false
+            ROLE_SERVICES=false
+            ;;
         *) K3S_ROLE="standalone" ;;
     esac
 
     echo ""
-    ok "Cluster role: ${K3S_ROLE}"
+    ok "Node role: ${K3S_ROLE}"
 }
 
 # -----------------------------------------------------------------------------
@@ -1102,6 +1254,13 @@ main() {
     show_banner
     detect_hardware
     select_k3s_role
+
+    # Inference mode has a different flow
+    if [ "$K3S_ROLE" = "inference" ]; then
+        run_inference_install
+        return
+    fi
+
     select_feature_roles
 
     echo ""
@@ -1115,6 +1274,7 @@ main() {
     elif [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
         echo "  • Ollama (remote: ${OLLAMA_HOST})"
     fi
+    echo "  • Firewall rules"
     echo ""
 
     if ! confirm "Continue with installation?" "y"; then
@@ -1122,6 +1282,7 @@ main() {
         exit 0
     fi
 
+    configure_firewall
     ensure_k3s
     install_flux
     setup_gitops_repo
@@ -1132,6 +1293,103 @@ main() {
     setup_path
 
     show_summary
+}
+
+# -----------------------------------------------------------------------------
+# Inference Node Install (Ollama-only)
+# -----------------------------------------------------------------------------
+
+run_inference_install() {
+    echo ""
+    echo "This installer will set up:"
+    echo "  • Ollama (LLM inference server)"
+    echo "  • Firewall rules (port 11434)"
+    echo ""
+
+    if ! confirm "Continue with installation?" "y"; then
+        echo "Installation cancelled."
+        exit 0
+    fi
+
+    configure_firewall
+    install_ollama_server
+
+    show_inference_summary
+}
+
+install_ollama_server() {
+    section "Installing Ollama Server"
+
+    # Install Ollama
+    if ! command_exists ollama; then
+        info "Installing Ollama..."
+        curl -fsSL https://ollama.com/install.sh | sh
+    else
+        ok "Ollama already installed"
+    fi
+
+    # Configure Ollama to listen on all interfaces
+    info "Configuring Ollama for network access..."
+
+    if command_exists systemctl; then
+        # Create systemd override
+        sudo mkdir -p /etc/systemd/system/ollama.service.d
+        cat << 'EOF' | sudo tee /etc/systemd/system/ollama.service.d/override.conf > /dev/null
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0"
+EOF
+        sudo systemctl daemon-reload
+        sudo systemctl enable ollama
+        sudo systemctl restart ollama
+        ok "Ollama configured for network access (0.0.0.0:11434)"
+    else
+        warn "systemd not available"
+        info "Set OLLAMA_HOST=0.0.0.0 manually before starting Ollama"
+    fi
+
+    # Wait for Ollama to be ready
+    info "Waiting for Ollama..."
+    local retries=30
+    while [ $retries -gt 0 ]; do
+        if curl -s http://localhost:11434/api/tags &>/dev/null; then
+            ok "Ollama is running"
+            break
+        fi
+        retries=$((retries - 1))
+        sleep 1
+    done
+
+    # Pull a default model
+    if confirm "Pull llama3.2 model (2GB)?" "y"; then
+        info "Pulling llama3.2..."
+        ollama pull llama3.2
+        ok "Model ready"
+    fi
+}
+
+show_inference_summary() {
+    section "Installation Complete"
+
+    local local_ip
+    local_ip=$(get_local_ip)
+
+    echo -e "${GREEN}${BOLD}Inference node is ready.${NC}"
+    echo ""
+    echo -e "${BOLD}Ollama Server:${NC}"
+    echo -e "  Local:     http://localhost:11434"
+    echo -e "  Network:   http://${local_ip}:11434"
+    echo ""
+    echo -e "${BOLD}Available Models:${NC}"
+    ollama list 2>/dev/null || echo "  (none yet)"
+    echo ""
+    echo -e "${BOLD}Commands:${NC}"
+    echo -e "  ollama pull <model>   - Download a model"
+    echo -e "  ollama list           - List models"
+    echo -e "  ollama run <model>    - Chat with a model"
+    echo ""
+    echo -e "${CYAN}${BOLD}To use from cluster nodes:${NC}"
+    echo -e "  OLLAMA_HOST=http://${local_ip}:11434"
+    echo ""
 }
 
 main "$@"
