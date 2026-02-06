@@ -142,7 +142,7 @@ download_file() {
 
 show_banner() {
     echo ""
-    echo -e "${MAGENTA}${BOLD}    🔥  H E C A T E  🔥${NC}"
+    echo -e "${MAGENTA}${BOLD}    🔥🗝️🔥  H E C A T E  🔥🗝️🔥${NC}"
     echo ""
     echo -e "${DIM}    European Decentralized AI Infrastructure${NC}"
     echo -e "${DIM}    Now powered by k3s + GitOps${NC}"
