@@ -276,56 +276,81 @@ select_k3s_role() {
 # Feature Role Selection
 # -----------------------------------------------------------------------------
 
+# Ollama host (for remote Ollama servers)
+OLLAMA_HOST="http://localhost:11434"
+
 select_feature_roles() {
     section "Feature Selection"
 
-    echo "What features should this node have?"
-    echo ""
-    echo -e "  ${BOLD}1)${NC} Workstation     ${DIM}- TUI for development and AI chat${NC}"
-    echo -e "  ${BOLD}2)${NC} Services        ${DIM}- Host capabilities on the mesh${NC}"
-    echo -e "  ${BOLD}3)${NC} AI Provider     ${DIM}- Serve LLM models (installs Ollama)${NC}"
-    echo -e "  ${BOLD}4)${NC} Full            ${DIM}- All of the above${NC}"
-    echo ""
+    # Agent nodes: no TUI, no feature selection - they just run workloads
+    if [ "$K3S_ROLE" = "agent" ]; then
+        ROLE_SERVICES=true
+        info "Agent mode: workloads only (no TUI)"
+        echo ""
+        ok "Agent node configured"
+        return
+    fi
+
+    # Server/standalone: TUI by default, ask about AI
+    if [ "$K3S_ROLE" = "server" ] || [ "$K3S_ROLE" = "standalone" ]; then
+        ROLE_WORKSTATION=true  # Always install TUI on server
+        ROLE_SERVICES=true
+    fi
 
     if [ "$DAEMON_ONLY" = true ]; then
+        ROLE_WORKSTATION=false
         ROLE_SERVICES=true
         info "Daemon-only mode: services role only"
         return
     fi
 
     if [ "$HEADLESS" = true ]; then
-        ROLE_WORKSTATION=true
-        info "Headless mode: defaulting to workstation"
+        info "Headless mode: TUI + services"
         return
     fi
 
-    echo -en "  Enter choices (e.g., ${BOLD}1 3${NC} or ${BOLD}4${NC}) [1]: " > /dev/tty
-    read -r choices < /dev/tty
-    choices="${choices:-1}"
+    echo "This node will have: TUI + Services (default for ${K3S_ROLE})"
+    echo ""
 
-    for choice in $choices; do
-        case "$choice" in
-            1) ROLE_WORKSTATION=true ;;
-            2) ROLE_SERVICES=true ;;
-            3) ROLE_AI=true ;;
-            4)
-                ROLE_WORKSTATION=true
-                ROLE_SERVICES=true
-                ROLE_AI=true
-                ;;
-        esac
-    done
+    # Ask about AI/Ollama
+    if confirm "Enable AI features (LLM inference)?" "y"; then
+        ROLE_AI=true
 
-    # Default to workstation if nothing selected
-    if [ "$ROLE_WORKSTATION" = false ] && [ "$ROLE_SERVICES" = false ] && [ "$ROLE_AI" = false ]; then
-        ROLE_WORKSTATION=true
+        # Ask about Ollama location
+        echo ""
+        echo "Where is Ollama running?"
+        echo ""
+        echo -e "  ${BOLD}1)${NC} Local          ${DIM}- Install Ollama on this machine${NC}"
+        echo -e "  ${BOLD}2)${NC} Remote         ${DIM}- Ollama runs on another server${NC}"
+        echo ""
+        echo -en "  Enter choice [1]: " > /dev/tty
+        read -r ollama_choice < /dev/tty
+        ollama_choice="${ollama_choice:-1}"
+
+        if [ "$ollama_choice" = "2" ]; then
+            echo ""
+            echo -en "  Ollama host (e.g., host00.lab:11434): " > /dev/tty
+            read -r ollama_host < /dev/tty
+            if [ -n "$ollama_host" ]; then
+                # Add http:// if not present
+                if [[ ! "$ollama_host" =~ ^https?:// ]]; then
+                    ollama_host="http://${ollama_host}"
+                fi
+                # Add port if not present
+                if [[ ! "$ollama_host" =~ :[0-9]+$ ]]; then
+                    ollama_host="${ollama_host}:11434"
+                fi
+                OLLAMA_HOST="$ollama_host"
+                ROLE_AI=false  # Don't install Ollama locally
+                ok "Using remote Ollama: ${OLLAMA_HOST}"
+            fi
+        fi
     fi
 
-    local roles=()
-    [ "$ROLE_WORKSTATION" = true ] && roles+=("workstation")
-    [ "$ROLE_SERVICES" = true ] && roles+=("services")
-    [ "$ROLE_AI" = true ] && roles+=("ai-provider")
     echo ""
+    local roles=("workstation" "services")
+    [ "$ROLE_AI" = true ] && roles+=("ai-provider (local)")
+    [ "$OLLAMA_HOST" != "http://localhost:11434" ] && roles+=("ai-client (${OLLAMA_HOST})")
     ok "Selected features: ${roles[*]}"
 }
 
@@ -588,9 +613,13 @@ data:
   HECATE_CPU_CORES: "${DETECTED_CPU_CORES}"
   HECATE_GPU: "${gpu_type}"
   HECATE_GPU_VRAM_GB: "0"
+  OLLAMA_HOST: "${OLLAMA_HOST}"
 EOF
 
     ok "Hardware config: ${DETECTED_RAM_GB}GB RAM, ${DETECTED_CPU_CORES} cores, GPU: ${gpu_type}"
+    if [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
+        ok "Remote Ollama: ${OLLAMA_HOST}"
+    fi
 }
 
 # -----------------------------------------------------------------------------
@@ -728,6 +757,103 @@ setup_ollama() {
 }
 
 # -----------------------------------------------------------------------------
+# Terminal Configuration
+# -----------------------------------------------------------------------------
+
+check_terminal_capabilities() {
+    section "Checking Terminal Capabilities"
+
+    local term_ok=true
+    local colors=0
+
+    # Check TERM variable
+    if [ -z "${TERM:-}" ] || [ "$TERM" = "dumb" ]; then
+        warn "TERM is not set or is 'dumb'"
+        term_ok=false
+    else
+        ok "TERM: $TERM"
+    fi
+
+    # Check color support
+    if command_exists tput; then
+        colors=$(tput colors 2>/dev/null || echo "0")
+        if [ "$colors" -ge 256 ]; then
+            ok "Colors: $colors (excellent)"
+        elif [ "$colors" -ge 8 ]; then
+            warn "Colors: $colors (limited, recommend 256)"
+            term_ok=false
+        else
+            warn "Colors: $colors (poor)"
+            term_ok=false
+        fi
+    else
+        warn "tput not available, cannot detect colors"
+    fi
+
+    # Check if we're over SSH
+    if [ -n "${SSH_TTY:-}" ] || [ -n "${SSH_CONNECTION:-}" ]; then
+        info "Running over SSH"
+    fi
+
+    # If terminal is not optimal, configure it
+    if [ "$term_ok" = false ]; then
+        configure_terminal
+    fi
+}
+
+configure_terminal() {
+    info "Configuring terminal for TUI..."
+
+    # Create a wrapper script that ensures proper terminal settings
+    mkdir -p "$BIN_DIR"
+    cat > "${BIN_DIR}/hecate-tui-wrapped" << 'TUIWRAPPER'
+#!/usr/bin/env bash
+# Wrapper to ensure proper terminal settings for Hecate TUI
+
+# Ensure TERM is set for 256 colors
+if [ -z "$TERM" ] || [ "$TERM" = "dumb" ] || [ "$TERM" = "vt100" ]; then
+    export TERM="xterm-256color"
+fi
+
+# Check if TERM supports 256 colors, upgrade if not
+case "$TERM" in
+    xterm|screen|tmux|rxvt)
+        export TERM="${TERM}-256color"
+        ;;
+esac
+
+# Run the actual TUI
+exec "$(dirname "$0")/hecate-tui" "$@"
+TUIWRAPPER
+    chmod +x "${BIN_DIR}/hecate-tui-wrapped"
+
+    # Add terminal config to shell profile
+    local shell_profile=""
+    if [ -f "$HOME/.zshrc" ]; then
+        shell_profile="$HOME/.zshrc"
+    elif [ -f "$HOME/.bashrc" ]; then
+        shell_profile="$HOME/.bashrc"
+    fi
+
+    if [ -n "$shell_profile" ]; then
+        if ! grep -q "# Hecate terminal config" "$shell_profile" 2>/dev/null; then
+            cat >> "$shell_profile" << 'TERMCONFIG'
+
+# Hecate terminal config
+# Ensure 256 color support for TUI
+if [ "$TERM" = "xterm" ] || [ "$TERM" = "screen" ]; then
+    export TERM="${TERM}-256color"
+fi
+TERMCONFIG
+            ok "Added terminal config to $shell_profile"
+        fi
+    fi
+
+    ok "Terminal configured for 256-color support"
+    info "Use 'hecate-tui-wrapped' if colors are still broken"
+}
+
+# -----------------------------------------------------------------------------
 # TUI Installation
 # -----------------------------------------------------------------------------
 
@@ -735,6 +861,9 @@ install_tui() {
     if [ "$ROLE_WORKSTATION" = false ]; then
         return
     fi
+
+    # Check terminal capabilities first
+    check_terminal_capabilities
 
     section "Installing Hecate TUI"
 
@@ -913,15 +1042,20 @@ show_summary() {
     echo -e "${BOLD}Components:${NC}"
     echo -e "  ${CYAN}hecate${NC}       - CLI wrapper"
     [ "$ROLE_WORKSTATION" = true ] && echo -e "  ${CYAN}hecate-tui${NC}   - Terminal UI"
-    [ "$ROLE_AI" = true ] && command_exists ollama && echo -e "  ${CYAN}ollama${NC}       - LLM backend"
+    if [ "$ROLE_AI" = true ] && command_exists ollama; then
+        echo -e "  ${CYAN}ollama${NC}       - LLM backend (local)"
+    elif [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
+        echo -e "  ${CYAN}ollama${NC}       - LLM backend (${OLLAMA_HOST})"
+    fi
     echo ""
     echo -e "${BOLD}Commands:${NC}"
     echo -e "  hecate status     - Pod status"
     echo -e "  hecate logs       - View logs"
-    echo -e "  hecate-tui        - Launch TUI"
+    [ "$ROLE_WORKSTATION" = true ] && echo -e "  hecate-tui        - Launch TUI"
     echo ""
     echo -e "Socket:    /run/hecate/daemon.sock"
     echo -e "API:       http://localhost:4444"
+    echo -e "Ollama:    ${OLLAMA_HOST}"
     echo -e "GitOps:    ${GITOPS_DIR}"
     echo ""
 
@@ -976,7 +1110,11 @@ main() {
     echo "  • FluxCD (GitOps)"
     echo "  • Hecate daemon (DaemonSet)"
     [ "$ROLE_WORKSTATION" = true ] && echo "  • Hecate TUI"
-    [ "$ROLE_AI" = true ] && echo "  • Ollama"
+    if [ "$ROLE_AI" = true ]; then
+        echo "  • Ollama (local)"
+    elif [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
+        echo "  • Ollama (remote: ${OLLAMA_HOST})"
+    fi
     echo ""
 
     if ! confirm "Continue with installation?" "y"; then
