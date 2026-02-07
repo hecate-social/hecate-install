@@ -948,15 +948,18 @@ install_flux() {
 # Infrastructure syncs from upstream hecate-gitops (automatic updates)
 # User apps sync from local git server (edit locally, auto-deploy)
 HECATE_GITOPS_SEED="https://github.com/hecate-social/hecate-gitops.git"
-HECATE_REPOS_DIR="/var/lib/hecate/repos"
+# Soft-serve stores repos in $SOFT_SERVE_DATA_PATH/repos/
+# We mount /var/lib/hecate/soft-serve to /data in the container
+HECATE_SOFT_SERVE_DIR="/var/lib/hecate/soft-serve"
+HECATE_REPOS_DIR="${HECATE_SOFT_SERVE_DIR}/repos"
 HECATE_BARE_REPO="${HECATE_REPOS_DIR}/hecate-gitops.git"
 
 setup_gitops_repo() {
     section "Setting up GitOps Repository"
 
-    # Create repos directory for git-server
+    # Create soft-serve data directory structure
     sudo mkdir -p "${HECATE_REPOS_DIR}"
-    sudo chown -R "${USER}:${USER}" "${HECATE_REPOS_DIR}"
+    sudo chown -R "${USER}:${USER}" "${HECATE_SOFT_SERVE_DIR}"
 
     # Clone hecate-gitops seed for local working copy
     if [ -d "${GITOPS_DIR}/.git" ]; then
@@ -972,21 +975,22 @@ setup_gitops_repo() {
 
     ok "GitOps working copy ready at ${GITOPS_DIR}"
 
-    # Create bare repo for git-server to serve
+    # Create bare repo for soft-serve to serve
     if [ ! -d "${HECATE_BARE_REPO}" ]; then
-        info "Creating bare repo for local git server..."
+        info "Creating bare repo for soft-serve git server..."
         git clone --bare "${GITOPS_DIR}" "${HECATE_BARE_REPO}"
         # Enable push
         git -C "${HECATE_BARE_REPO}" config receive.denyCurrentBranch ignore
     fi
 
     # Add local remote for pushing changes
+    # Uses filesystem path so push works even if soft-serve is down
     cd "${GITOPS_DIR}"
     if ! git remote get-url local >/dev/null 2>&1; then
         git remote add local "${HECATE_BARE_REPO}"
     fi
 
-    ok "Local git server repo ready at ${HECATE_BARE_REPO}"
+    ok "Soft-serve repo ready at ${HECATE_BARE_REPO}"
 
     # Apply hardware-specific patches locally
     update_hardware_config
@@ -999,6 +1003,7 @@ setup_gitops_repo() {
     ok "GitOps configuration complete"
     info "Infrastructure syncs from upstream (automatic updates)"
     info "User apps: edit ${GITOPS_DIR}/apps/, commit, 'git push local main'"
+    info "Soft-serve serves repos via HTTP at git-server.hecate:23232"
 }
 
 update_hardware_config() {
