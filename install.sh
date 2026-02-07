@@ -944,15 +944,16 @@ install_flux() {
 # GitOps Repository Setup
 # -----------------------------------------------------------------------------
 
-# GitOps repository - can be overridden with HECATE_GITOPS_URL env var
-# For customization, fork hecate-gitops and set HECATE_GITOPS_URL to your fork
+# GitOps configuration
+# By default, Flux watches upstream hecate-gitops for automatic updates.
+# Power users can fork and set HECATE_GITOPS_URL to their fork.
 HECATE_GITOPS_SEED="https://github.com/hecate-social/hecate-gitops.git"
 HECATE_GITOPS_URL="${HECATE_GITOPS_URL:-https://github.com/hecate-social/hecate-gitops}"
 
 setup_gitops_repo() {
     section "Setting up GitOps Repository"
 
-    # Clone or update hecate-gitops seed
+    # Clone hecate-gitops seed for local reference and patches
     if [ -d "${GITOPS_DIR}/.git" ]; then
         info "GitOps repo exists, pulling latest..."
         cd "${GITOPS_DIR}"
@@ -966,18 +967,17 @@ setup_gitops_repo() {
 
     ok "GitOps repository ready at ${GITOPS_DIR}"
 
-    # Update FluxCD source to point to remote URL
+    # Configure Flux to watch upstream (or custom URL)
     update_flux_source
 
-    # Update hardware configuration with detected values
+    # Apply hardware-specific patches locally
     update_hardware_config
 
-    # Commit local changes (won't push - user must set up their own remote)
-    git add -A
-    git commit -m "Configure for local cluster" 2>/dev/null || true
-
     ok "GitOps configuration complete"
-    info "To customize: fork hecate-gitops, update flux-system/gotk-sync.yaml, push to your fork"
+    if [ "${HECATE_GITOPS_URL}" = "https://github.com/hecate-social/hecate-gitops" ]; then
+        info "Flux will sync from upstream - updates are automatic!"
+        info "To customize: fork the repo and set HECATE_GITOPS_URL"
+    fi
 }
 
 update_flux_source() {
@@ -1056,6 +1056,73 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
+# LLM Provider Secrets
+# -----------------------------------------------------------------------------
+
+setup_llm_secrets() {
+    section "LLM Provider Configuration"
+
+    # Check for API keys in environment
+    local has_keys=false
+    local secret_args=""
+
+    if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+        info "Found ANTHROPIC_API_KEY in environment"
+        secret_args="${secret_args} --from-literal=ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}"
+        has_keys=true
+    fi
+
+    if [ -n "${OPENAI_API_KEY:-}" ]; then
+        info "Found OPENAI_API_KEY in environment"
+        secret_args="${secret_args} --from-literal=OPENAI_API_KEY=${OPENAI_API_KEY}"
+        has_keys=true
+    fi
+
+    if [ -n "${GOOGLE_API_KEY:-}" ]; then
+        info "Found GOOGLE_API_KEY in environment"
+        secret_args="${secret_args} --from-literal=GOOGLE_API_KEY=${GOOGLE_API_KEY}"
+        has_keys=true
+    fi
+
+    if [ "$has_keys" = true ]; then
+        # Create or update the secret
+        kubectl create namespace hecate 2>/dev/null || true
+        kubectl delete secret hecate-secrets -n hecate 2>/dev/null || true
+        eval "kubectl create secret generic hecate-secrets -n hecate ${secret_args}"
+        ok "LLM provider secrets configured"
+    else
+        info "No LLM API keys found in environment"
+        info "To add later: export ANTHROPIC_API_KEY=... and re-run install"
+        info "Or use: kubectl create secret generic hecate-secrets -n hecate --from-literal=ANTHROPIC_API_KEY=..."
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# Apply Hardware Config Directly
+# -----------------------------------------------------------------------------
+
+apply_hardware_config() {
+    # Apply hardware config as a patch directly to the cluster
+    # This allows node-specific settings without modifying gitops
+    info "Applying hardware configuration..."
+
+    kubectl apply -f - <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hecate-hardware
+  namespace: hecate
+data:
+  HECATE_RAM_GB: "${DETECTED_RAM_GB}"
+  HECATE_CPU_CORES: "${DETECTED_CPU_CORES}"
+  HECATE_GPU: "${DETECTED_GPU_TYPE:-none}"
+  HECATE_GPU_VRAM_GB: "${DETECTED_GPU_VRAM:-0}"
+  OLLAMA_HOST: "${OLLAMA_HOST:-http://localhost:11434}"
+EOF
+    ok "Hardware config applied"
+}
+
+# -----------------------------------------------------------------------------
 # Deploy to Cluster
 # -----------------------------------------------------------------------------
 
@@ -1064,7 +1131,13 @@ deploy_hecate() {
 
     cd "${GITOPS_DIR}"
 
-    # Apply flux sync
+    # Apply secrets first (not in gitops - local only)
+    setup_llm_secrets
+
+    # Apply hardware config (node-specific, not in gitops)
+    apply_hardware_config
+
+    # Apply flux sync - watches upstream for base manifests
     kubectl apply -f flux-system/gotk-sync.yaml 2>/dev/null || true
 
     # Direct apply for immediate deployment (using clusters/local which includes infra)
