@@ -945,15 +945,20 @@ install_flux() {
 # -----------------------------------------------------------------------------
 
 # GitOps configuration
-# By default, Flux watches upstream hecate-gitops for automatic updates.
-# Power users can fork and set HECATE_GITOPS_URL to their fork.
+# Infrastructure syncs from upstream hecate-gitops (automatic updates)
+# User apps sync from local git server (edit locally, auto-deploy)
 HECATE_GITOPS_SEED="https://github.com/hecate-social/hecate-gitops.git"
-HECATE_GITOPS_URL="${HECATE_GITOPS_URL:-https://github.com/hecate-social/hecate-gitops}"
+HECATE_REPOS_DIR="/var/lib/hecate/repos"
+HECATE_BARE_REPO="${HECATE_REPOS_DIR}/hecate-gitops.git"
 
 setup_gitops_repo() {
     section "Setting up GitOps Repository"
 
-    # Clone hecate-gitops seed for local reference and patches
+    # Create repos directory for git-server
+    sudo mkdir -p "${HECATE_REPOS_DIR}"
+    sudo chown -R "${USER}:${USER}" "${HECATE_REPOS_DIR}"
+
+    # Clone hecate-gitops seed for local working copy
     if [ -d "${GITOPS_DIR}/.git" ]; then
         info "GitOps repo exists, pulling latest..."
         cd "${GITOPS_DIR}"
@@ -965,62 +970,35 @@ setup_gitops_repo() {
         cd "${GITOPS_DIR}"
     fi
 
-    ok "GitOps repository ready at ${GITOPS_DIR}"
+    ok "GitOps working copy ready at ${GITOPS_DIR}"
 
-    # Configure Flux to watch upstream (or custom URL)
-    update_flux_source
+    # Create bare repo for git-server to serve
+    if [ ! -d "${HECATE_BARE_REPO}" ]; then
+        info "Creating bare repo for local git server..."
+        git clone --bare "${GITOPS_DIR}" "${HECATE_BARE_REPO}"
+        # Enable push
+        git -C "${HECATE_BARE_REPO}" config receive.denyCurrentBranch ignore
+    fi
+
+    # Add local remote for pushing changes
+    cd "${GITOPS_DIR}"
+    if ! git remote get-url local >/dev/null 2>&1; then
+        git remote add local "${HECATE_BARE_REPO}"
+    fi
+
+    ok "Local git server repo ready at ${HECATE_BARE_REPO}"
 
     # Apply hardware-specific patches locally
     update_hardware_config
 
+    # Push to local bare repo
+    git add -A
+    git commit -m "Configure for local cluster" 2>/dev/null || true
+    git push local main 2>/dev/null || true
+
     ok "GitOps configuration complete"
-    if [ "${HECATE_GITOPS_URL}" = "https://github.com/hecate-social/hecate-gitops" ]; then
-        info "Flux will sync from upstream - updates are automatic!"
-        info "To customize: fork the repo and set HECATE_GITOPS_URL"
-    fi
-}
-
-update_flux_source() {
-    info "Configuring FluxCD source..."
-
-    cat > flux-system/gotk-sync.yaml << EOF
-# FluxCD GitRepository and Kustomization
-#
-# This points to: ${HECATE_GITOPS_URL}
-#
-# To use your own fork:
-# 1. Fork hecate-social/hecate-gitops on GitHub
-# 2. Update the URL below to your fork
-# 3. Push changes to your fork
-# 4. Re-apply: kubectl apply -f flux-system/gotk-sync.yaml
-#
----
-apiVersion: source.toolkit.fluxcd.io/v1
-kind: GitRepository
-metadata:
-  name: hecate-gitops
-  namespace: flux-system
-spec:
-  interval: 1m
-  url: ${HECATE_GITOPS_URL}
-  ref:
-    branch: main
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: hecate-cluster
-  namespace: flux-system
-spec:
-  interval: 1m
-  sourceRef:
-    kind: GitRepository
-    name: hecate-gitops
-  path: ./clusters/local
-  prune: true
-EOF
-
-    ok "FluxCD configured to watch: ${HECATE_GITOPS_URL}"
+    info "Infrastructure syncs from upstream (automatic updates)"
+    info "User apps: edit ${GITOPS_DIR}/apps/, commit, 'git push local main'"
 }
 
 update_hardware_config() {
