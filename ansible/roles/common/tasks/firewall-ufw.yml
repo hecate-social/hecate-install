@@ -17,23 +17,14 @@
         proto: tcp
         comment: 'SSH'
 
-    # Server-specific ports
-    - name: Allow k3s API (server)
-      ufw:
-        rule: allow
-        port: '6443'
-        proto: tcp
-        comment: 'k3s API'
-      when: k3s_role == 'server'
-
-    # k3s cluster ports (server + agents)
+    # Cluster node ports
     - name: Allow Macula mesh
       ufw:
         rule: allow
         port: '4433'
         proto: udp
         comment: 'Macula mesh QUIC'
-      when: k3s_role in ['server', 'agent']
+      when: node_role == 'cluster'
 
     - name: Allow EPMD (Erlang)
       ufw:
@@ -41,7 +32,7 @@
         port: '4369'
         proto: tcp
         comment: 'EPMD Erlang'
-      when: k3s_role in ['server', 'agent']
+      when: node_role == 'cluster'
 
     - name: Allow Erlang distribution
       ufw:
@@ -49,23 +40,7 @@
         port: '9100'
         proto: tcp
         comment: 'Erlang distribution'
-      when: k3s_role in ['server', 'agent']
-
-    - name: Allow Flannel VXLAN
-      ufw:
-        rule: allow
-        port: '8472'
-        proto: udp
-        comment: 'Flannel VXLAN'
-      when: k3s_role in ['server', 'agent']
-
-    - name: Allow Kubelet
-      ufw:
-        rule: allow
-        port: '10250'
-        proto: tcp
-        comment: 'Kubelet'
-      when: k3s_role in ['server', 'agent']
+      when: node_role == 'cluster'
 
     # Inference node ports
     - name: Allow Ollama API (inference)
@@ -74,4 +49,4 @@
         port: '11434'
         proto: tcp
         comment: 'Ollama API'
-      when: k3s_role == 'inference'
+      when: node_role == 'inference'

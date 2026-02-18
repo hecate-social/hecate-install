@@ -16,6 +16,7 @@
     name:
       - curl
       - ca-certificates
+      - git
     state: present
 
 - name: Configure firewall (ufw)
@@ -32,7 +33,19 @@
   file:
     path: "{{ item }}"
     state: directory
+    owner: "{{ ansible_user }}"
     mode: '0755'
   loop:
-    - /home/{{ ansible_user }}/.hecate
-    - /run/hecate
+    - "/home/{{ ansible_user }}/.hecate"
+    - "/home/{{ ansible_user }}/.hecate/hecate-daemon/sqlite"
+    - "/home/{{ ansible_user }}/.hecate/hecate-daemon/reckon-db"
+    - "/home/{{ ansible_user }}/.hecate/hecate-daemon/sockets"
+    - "/home/{{ ansible_user }}/.hecate/hecate-daemon/run"
+    - "/home/{{ ansible_user }}/.hecate/hecate-daemon/connectors"
+    - "/home/{{ ansible_user }}/.hecate/gitops/system"
+    - "/home/{{ ansible_user }}/.hecate/gitops/apps"
+    - "/home/{{ ansible_user }}/.hecate/config"
+    - "/home/{{ ansible_user }}/.hecate/secrets"
+    - "/home/{{ ansible_user }}/.local/bin"
+    - "/home/{{ ansible_user }}/.config/containers/systemd"
+    - "/home/{{ ansible_user }}/.config/systemd/user"

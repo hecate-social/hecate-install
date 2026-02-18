@@ -10,22 +10,13 @@
 - name: Configure firewalld rules
   when: firewalld_check.rc == 0
   block:
-    # Server-specific ports
-    - name: Allow k3s API (server)
-      firewalld:
-        port: 6443/tcp
-        permanent: yes
-        state: enabled
-      when: k3s_role == 'server'
-      notify: reload firewalld
-
-    # k3s cluster ports
+    # Cluster node ports
     - name: Allow Macula mesh
       firewalld:
         port: 4433/udp
         permanent: yes
         state: enabled
-      when: k3s_role in ['server', 'agent']
+      when: node_role == 'cluster'
       notify: reload firewalld
 
     - name: Allow EPMD
@@ -33,7 +24,7 @@
         port: 4369/tcp
         permanent: yes
         state: enabled
-      when: k3s_role in ['server', 'agent']
+      when: node_role == 'cluster'
       notify: reload firewalld
 
     - name: Allow Erlang distribution
@@ -41,23 +32,7 @@
         port: 9100/tcp
         permanent: yes
         state: enabled
-      when: k3s_role in ['server', 'agent']
-      notify: reload firewalld
-
-    - name: Allow Flannel VXLAN
-      firewalld:
-        port: 8472/udp
-        permanent: yes
-        state: enabled
-      when: k3s_role in ['server', 'agent']
-      notify: reload firewalld
-
-    - name: Allow Kubelet
-      firewalld:
-        port: 10250/tcp
-        permanent: yes
-        state: enabled
-      when: k3s_role in ['server', 'agent']
+      when: node_role == 'cluster'
       notify: reload firewalld
 
     # Inference node
@@ -66,5 +41,5 @@
         port: 11434/tcp
         permanent: yes
         state: enabled
-      when: k3s_role == 'inference'
+      when: node_role == 'inference'
       notify: reload firewalld

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# Hecate Node Installer (k3s Edition)
+# Hecate Node Installer (systemd + podman)
 # Usage: curl -fsSL https://hecate.io/install.sh | bash
 #
 # Installs:
-#   - k3s (lightweight Kubernetes)
-#   - FluxCD (GitOps)
-#   - hecate-daemon (via DaemonSet)
-#   - hecate-tui (native binary)
+#   - podman (rootless containers)
+#   - hecate-daemon (via Podman Quadlet)
+#   - hecate-reconciler (watches ~/.hecate/gitops/)
+#   - hecate-web (Tauri desktop app, workstations only)
 #   - Ollama (optional, for local LLM)
 #
 set -euo pipefail
@@ -20,24 +20,28 @@ HECATE_VERSION="${HECATE_VERSION:-latest}"
 INSTALL_DIR="${HECATE_INSTALL_DIR:-$HOME/.hecate}"
 BIN_DIR="${HECATE_BIN_DIR:-$HOME/.local/bin}"
 GITOPS_DIR="${INSTALL_DIR}/gitops"
+QUADLET_DIR="${HOME}/.config/containers/systemd"
+SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 REPO_BASE="https://github.com/hecate-social"
 
 # Docker image (GitHub Container Registry)
-HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:main"
+HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:0.8.0"
 
 # Flags
 HEADLESS=false
 DAEMON_ONLY=false
 
-# k3s role
-K3S_ROLE="standalone"  # standalone, server, agent
-K3S_SERVER_URL=""
-K3S_TOKEN=""
+# Node role
+NODE_ROLE="standalone"  # standalone, cluster, inference
 
 # Feature roles
 ROLE_WORKSTATION=false
 ROLE_SERVICES=false
 ROLE_AI=false
+
+# Cluster join
+CLUSTER_COOKIE=""
+CLUSTER_PEERS=""
 
 # Hardware detection results
 DETECTED_RAM_GB=0
@@ -302,7 +306,7 @@ configure_firewall() {
     show_required_ports
     echo ""
 
-    # Offer to configure even if inactive (rules will apply when enabled)
+    # Offer to configure even if inactive
     local prompt="Configure firewall rules?"
     if [ "$fw_active" = false ]; then
         prompt="Add firewall rules? (will apply when ${fw_tool} is enabled)"
@@ -314,23 +318,15 @@ configure_firewall() {
     fi
 
     case "$fw_tool" in
-        ufw)
-            configure_ufw
-            ;;
-        firewalld)
-            configure_firewalld
-            ;;
-        nftables)
-            configure_nftables
-            ;;
-        iptables)
-            configure_iptables
-            ;;
+        ufw)       configure_ufw ;;
+        firewalld) configure_firewalld ;;
+        nftables)  configure_nftables ;;
+        iptables)  configure_iptables ;;
     esac
 }
 
 show_required_ports() {
-    case "$K3S_ROLE" in
+    case "$NODE_ROLE" in
         inference)
             echo "Required ports for Inference node:"
             echo -e "  ${CYAN}11434/tcp${NC}  - Ollama API"
@@ -341,23 +337,11 @@ show_required_ports() {
             echo -e "  ${CYAN}4433/udp${NC}   - Macula mesh (QUIC)"
             echo -e "  ${CYAN}22/tcp${NC}     - SSH"
             ;;
-        server)
-            echo "Required ports for Server node:"
-            echo -e "  ${CYAN}6443/tcp${NC}   - k3s API (for agents)"
+        cluster)
+            echo "Required ports for Cluster node:"
             echo -e "  ${CYAN}4433/udp${NC}   - Macula mesh (QUIC)"
             echo -e "  ${CYAN}4369/tcp${NC}   - EPMD (Erlang)"
             echo -e "  ${CYAN}9100/tcp${NC}   - Erlang distribution"
-            echo -e "  ${CYAN}8472/udp${NC}   - Flannel VXLAN"
-            echo -e "  ${CYAN}10250/tcp${NC}  - Kubelet"
-            echo -e "  ${CYAN}22/tcp${NC}     - SSH"
-            ;;
-        agent)
-            echo "Required ports for Agent node:"
-            echo -e "  ${CYAN}4433/udp${NC}   - Macula mesh (QUIC)"
-            echo -e "  ${CYAN}4369/tcp${NC}   - EPMD (Erlang)"
-            echo -e "  ${CYAN}9100/tcp${NC}   - Erlang distribution"
-            echo -e "  ${CYAN}8472/udp${NC}   - Flannel VXLAN"
-            echo -e "  ${CYAN}10250/tcp${NC}  - Kubelet"
             echo -e "  ${CYAN}22/tcp${NC}     - SSH"
             ;;
     esac
@@ -365,39 +349,25 @@ show_required_ports() {
 
 configure_ufw() {
     info "Configuring ufw..."
-
-    # Common: SSH
     sudo ufw allow ssh
 
-    case "$K3S_ROLE" in
+    case "$NODE_ROLE" in
         inference)
             sudo ufw allow 11434/tcp comment 'Ollama API'
             ;;
         standalone)
             sudo ufw allow 4433/udp comment 'Macula mesh'
             ;;
-        server)
-            sudo ufw allow 6443/tcp comment 'k3s API'
+        cluster)
             sudo ufw allow 4433/udp comment 'Macula mesh'
             sudo ufw allow 4369/tcp comment 'EPMD'
             sudo ufw allow 9100/tcp comment 'Erlang dist'
-            sudo ufw allow 8472/udp comment 'Flannel VXLAN'
-            sudo ufw allow 10250/tcp comment 'Kubelet'
-            ;;
-        agent)
-            sudo ufw allow 4433/udp comment 'Macula mesh'
-            sudo ufw allow 4369/tcp comment 'EPMD'
-            sudo ufw allow 9100/tcp comment 'Erlang dist'
-            sudo ufw allow 8472/udp comment 'Flannel VXLAN'
-            sudo ufw allow 10250/tcp comment 'Kubelet'
             ;;
     esac
 
-    # Enable if not already
     if ! sudo ufw status | grep -q "Status: active"; then
         sudo ufw --force enable
     fi
-
     sudo ufw reload
     ok "ufw configured"
 }
@@ -405,27 +375,17 @@ configure_ufw() {
 configure_firewalld() {
     info "Configuring firewalld..."
 
-    case "$K3S_ROLE" in
+    case "$NODE_ROLE" in
         inference)
             sudo firewall-cmd --permanent --add-port=11434/tcp
             ;;
         standalone)
             sudo firewall-cmd --permanent --add-port=4433/udp
             ;;
-        server)
-            sudo firewall-cmd --permanent --add-port=6443/tcp
+        cluster)
             sudo firewall-cmd --permanent --add-port=4433/udp
             sudo firewall-cmd --permanent --add-port=4369/tcp
             sudo firewall-cmd --permanent --add-port=9100/tcp
-            sudo firewall-cmd --permanent --add-port=8472/udp
-            sudo firewall-cmd --permanent --add-port=10250/tcp
-            ;;
-        agent)
-            sudo firewall-cmd --permanent --add-port=4433/udp
-            sudo firewall-cmd --permanent --add-port=4369/tcp
-            sudo firewall-cmd --permanent --add-port=9100/tcp
-            sudo firewall-cmd --permanent --add-port=8472/udp
-            sudo firewall-cmd --permanent --add-port=10250/tcp
             ;;
     esac
 
@@ -436,31 +396,20 @@ configure_firewalld() {
 configure_nftables() {
     info "Configuring nftables..."
 
-    # Create hecate table if needed
     sudo nft add table inet hecate 2>/dev/null || true
     sudo nft add chain inet hecate input '{ type filter hook input priority 0; policy accept; }' 2>/dev/null || true
 
-    case "$K3S_ROLE" in
+    case "$NODE_ROLE" in
         inference)
             sudo nft add rule inet hecate input tcp dport 11434 accept comment \"Ollama API\"
             ;;
         standalone)
             sudo nft add rule inet hecate input udp dport 4433 accept comment \"Macula mesh\"
             ;;
-        server)
-            sudo nft add rule inet hecate input tcp dport 6443 accept comment \"k3s API\"
+        cluster)
             sudo nft add rule inet hecate input udp dport 4433 accept comment \"Macula mesh\"
             sudo nft add rule inet hecate input tcp dport 4369 accept comment \"EPMD\"
             sudo nft add rule inet hecate input tcp dport 9100 accept comment \"Erlang dist\"
-            sudo nft add rule inet hecate input udp dport 8472 accept comment \"Flannel VXLAN\"
-            sudo nft add rule inet hecate input tcp dport 10250 accept comment \"Kubelet\"
-            ;;
-        agent)
-            sudo nft add rule inet hecate input udp dport 4433 accept comment \"Macula mesh\"
-            sudo nft add rule inet hecate input tcp dport 4369 accept comment \"EPMD\"
-            sudo nft add rule inet hecate input tcp dport 9100 accept comment \"Erlang dist\"
-            sudo nft add rule inet hecate input udp dport 8472 accept comment \"Flannel VXLAN\"
-            sudo nft add rule inet hecate input tcp dport 10250 accept comment \"Kubelet\"
             ;;
     esac
 
@@ -471,27 +420,17 @@ configure_nftables() {
 configure_iptables() {
     info "Configuring iptables..."
 
-    case "$K3S_ROLE" in
+    case "$NODE_ROLE" in
         inference)
             sudo iptables -A INPUT -p tcp --dport 11434 -j ACCEPT -m comment --comment "Ollama API"
             ;;
         standalone)
             sudo iptables -A INPUT -p udp --dport 4433 -j ACCEPT -m comment --comment "Macula mesh"
             ;;
-        server)
-            sudo iptables -A INPUT -p tcp --dport 6443 -j ACCEPT -m comment --comment "k3s API"
+        cluster)
             sudo iptables -A INPUT -p udp --dport 4433 -j ACCEPT -m comment --comment "Macula mesh"
             sudo iptables -A INPUT -p tcp --dport 4369 -j ACCEPT -m comment --comment "EPMD"
             sudo iptables -A INPUT -p tcp --dport 9100 -j ACCEPT -m comment --comment "Erlang dist"
-            sudo iptables -A INPUT -p udp --dport 8472 -j ACCEPT -m comment --comment "Flannel VXLAN"
-            sudo iptables -A INPUT -p tcp --dport 10250 -j ACCEPT -m comment --comment "Kubelet"
-            ;;
-        agent)
-            sudo iptables -A INPUT -p udp --dport 4433 -j ACCEPT -m comment --comment "Macula mesh"
-            sudo iptables -A INPUT -p tcp --dport 4369 -j ACCEPT -m comment --comment "EPMD"
-            sudo iptables -A INPUT -p tcp --dport 9100 -j ACCEPT -m comment --comment "Erlang dist"
-            sudo iptables -A INPUT -p udp --dport 8472 -j ACCEPT -m comment --comment "Flannel VXLAN"
-            sudo iptables -A INPUT -p tcp --dport 10250 -j ACCEPT -m comment --comment "Kubelet"
             ;;
     esac
 
@@ -503,72 +442,18 @@ configure_iptables() {
 # Node Role Selection
 # -----------------------------------------------------------------------------
 
-detect_existing_k3s() {
-    # Detect existing k3s installation and its role
-    EXISTING_K3S=""
-    EXISTING_K3S_ROLE=""
-
-    if command_exists k3s; then
-        EXISTING_K3S="true"
-        # Check if it's a server or agent
-        if [ -f /etc/systemd/system/k3s.service ]; then
-            EXISTING_K3S_ROLE="server"
-        elif [ -f /etc/systemd/system/k3s-agent.service ]; then
-            EXISTING_K3S_ROLE="agent"
-        elif systemctl is-active --quiet k3s 2>/dev/null; then
-            EXISTING_K3S_ROLE="server"
-        elif systemctl is-active --quiet k3s-agent 2>/dev/null; then
-            EXISTING_K3S_ROLE="agent"
-        fi
-    fi
-}
-
-uninstall_existing_k3s() {
-    info "Uninstalling existing k3s..."
-
-    if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
-        sudo /usr/local/bin/k3s-uninstall.sh
-        ok "k3s server uninstalled"
-    elif [ -f /usr/local/bin/k3s-agent-uninstall.sh ]; then
-        sudo /usr/local/bin/k3s-agent-uninstall.sh
-        ok "k3s agent uninstalled"
-    else
-        warn "No k3s uninstall script found"
-        return 1
-    fi
-
-    EXISTING_K3S=""
-    EXISTING_K3S_ROLE=""
-    return 0
-}
-
-select_k3s_role() {
+select_node_role() {
     section "Node Role Selection"
-
-    # Detect existing k3s
-    detect_existing_k3s
-
-    if [ -n "$EXISTING_K3S" ]; then
-        echo -e "${YELLOW}${BOLD}Existing k3s installation detected!${NC}"
-        echo -e "  Role: ${CYAN}${EXISTING_K3S_ROLE}${NC}"
-        if [ "$EXISTING_K3S_ROLE" = "server" ]; then
-            local age=""
-            age=$(kubectl get nodes -o jsonpath='{.items[0].metadata.creationTimestamp}' 2>/dev/null || echo "unknown")
-            echo -e "  Created: ${age}"
-        fi
-        echo ""
-    fi
 
     echo "What type of node is this?"
     echo ""
-    echo -e "  ${BOLD}1)${NC} Standalone     ${DIM}- Single-node cluster (default)${NC}"
-    echo -e "  ${BOLD}2)${NC} Server         ${DIM}- Control plane (can add agents later)${NC}"
-    echo -e "  ${BOLD}3)${NC} Agent          ${DIM}- Join existing cluster${NC}"
-    echo -e "  ${BOLD}4)${NC} Inference      ${DIM}- Dedicated Ollama server (no k3s)${NC}"
+    echo -e "  ${BOLD}1)${NC} Standalone     ${DIM}- Single machine, everything local (default)${NC}"
+    echo -e "  ${BOLD}2)${NC} Cluster        ${DIM}- Join BEAM cluster with other nodes${NC}"
+    echo -e "  ${BOLD}3)${NC} Inference      ${DIM}- Dedicated Ollama server (no daemon)${NC}"
     echo ""
 
     if [ "$HEADLESS" = true ]; then
-        K3S_ROLE="standalone"
+        NODE_ROLE="standalone"
         info "Headless mode: defaulting to standalone"
         return
     fi
@@ -578,45 +463,33 @@ select_k3s_role() {
     choice="${choice:-1}"
 
     case "$choice" in
-        1) K3S_ROLE="standalone" ;;
-        2) K3S_ROLE="server" ;;
-        3)
-            K3S_ROLE="agent"
-
-            # Check if existing k3s is a server - need to uninstall first
-            if [ "$EXISTING_K3S_ROLE" = "server" ]; then
-                echo ""
-                warn "This node is currently a k3s SERVER"
-                echo "To join another cluster as an agent, the existing k3s must be removed."
-                echo ""
-                if confirm "Uninstall existing k3s server?" "y"; then
-                    uninstall_existing_k3s
-                else
-                    fatal "Cannot install as agent while server is running"
-                fi
-            fi
-
+        1) NODE_ROLE="standalone" ;;
+        2)
+            NODE_ROLE="cluster"
             echo ""
-            echo -en "  Server URL (e.g., https://192.168.1.10:6443): " > /dev/tty
-            read -r K3S_SERVER_URL < /dev/tty
-            echo -en "  Join token: " > /dev/tty
-            read -r K3S_TOKEN < /dev/tty
-            if [ -z "$K3S_SERVER_URL" ] || [ -z "$K3S_TOKEN" ]; then
-                fatal "Server URL and token are required for agent mode"
+            echo "BEAM cluster configuration:"
+            echo ""
+            echo -en "  Erlang cookie (shared secret): " > /dev/tty
+            read -r CLUSTER_COOKIE < /dev/tty
+            echo -en "  Peer nodes (comma-separated, e.g., beam00.lab,beam01.lab): " > /dev/tty
+            read -r CLUSTER_PEERS < /dev/tty
+
+            if [ -z "$CLUSTER_COOKIE" ]; then
+                warn "No cookie provided — generating random cookie"
+                CLUSTER_COOKIE=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 20)
             fi
             ;;
-        4)
-            K3S_ROLE="inference"
-            # Inference mode: just Ollama, no k3s
+        3)
+            NODE_ROLE="inference"
             ROLE_AI=true
             ROLE_WORKSTATION=false
             ROLE_SERVICES=false
             ;;
-        *) K3S_ROLE="standalone" ;;
+        *) NODE_ROLE="standalone" ;;
     esac
 
     echo ""
-    ok "Node role: ${K3S_ROLE}"
+    ok "Node role: ${NODE_ROLE}"
 }
 
 # -----------------------------------------------------------------------------
@@ -629,20 +502,9 @@ OLLAMA_HOST="http://localhost:11434"
 select_feature_roles() {
     section "Feature Selection"
 
-    # Agent nodes: no TUI, no feature selection - they just run workloads
-    if [ "$K3S_ROLE" = "agent" ]; then
-        ROLE_SERVICES=true
-        info "Agent mode: workloads only (no TUI)"
-        echo ""
-        ok "Agent node configured"
-        return
-    fi
-
-    # Server/standalone: TUI by default, ask about AI
-    if [ "$K3S_ROLE" = "server" ] || [ "$K3S_ROLE" = "standalone" ]; then
-        ROLE_WORKSTATION=true  # Always install TUI on server
-        ROLE_SERVICES=true
-    fi
+    # Standalone and cluster: workstation + services by default
+    ROLE_WORKSTATION=true
+    ROLE_SERVICES=true
 
     if [ "$DAEMON_ONLY" = true ]; then
         ROLE_WORKSTATION=false
@@ -652,11 +514,21 @@ select_feature_roles() {
     fi
 
     if [ "$HEADLESS" = true ]; then
-        info "Headless mode: TUI + services"
+        info "Headless mode: services only"
+        ROLE_WORKSTATION=false
         return
     fi
 
-    echo "This node will have: TUI + Services (default for ${K3S_ROLE})"
+    echo "This node will run: daemon + services (default)"
+    echo ""
+
+    # Ask about workstation (hecate-web)
+    if confirm "Install Hecate Web (desktop app)?" "y"; then
+        ROLE_WORKSTATION=true
+    else
+        ROLE_WORKSTATION=false
+    fi
+
     echo ""
 
     # Ask about Ollama configuration
@@ -689,7 +561,7 @@ select_feature_roles() {
                     ollama_host="${ollama_host}:11434"
                 fi
                 OLLAMA_HOST="$ollama_host"
-                ROLE_AI=false  # Don't install Ollama locally
+                ROLE_AI=false
                 ok "Using remote Ollama: ${OLLAMA_HOST}"
             else
                 warn "No URL provided, skipping AI features"
@@ -703,331 +575,263 @@ select_feature_roles() {
     esac
 
     echo ""
-    local roles=("workstation" "services")
+    local roles=()
+    [ "$ROLE_WORKSTATION" = true ] && roles+=("hecate-web")
+    [ "$ROLE_SERVICES" = true ] && roles+=("services")
     [ "$ROLE_AI" = true ] && roles+=("ollama (local)")
     [ "$OLLAMA_HOST" != "http://localhost:11434" ] && roles+=("ollama (${OLLAMA_HOST})")
     ok "Selected features: ${roles[*]}"
 }
 
 # -----------------------------------------------------------------------------
-# k3s Installation
+# Podman Installation
 # -----------------------------------------------------------------------------
 
-check_k3s() {
-    if command_exists k3s; then
+check_podman() {
+    if command_exists podman; then
         local version
-        version=$(k3s --version 2>/dev/null | head -1 | awk '{print $3}')
-        ok "k3s installed: ${version}"
+        version=$(podman --version 2>/dev/null | awk '{print $3}')
+        ok "podman installed: ${version}"
         return 0
     fi
     return 1
 }
 
-install_k3s() {
-    section "Installing k3s"
+install_podman() {
+    section "Installing Podman"
 
     local os
     os=$(detect_os)
 
     if [ "$os" = "darwin" ]; then
-        fatal "k3s is not supported on macOS. Use Docker Desktop with Kubernetes instead."
-    fi
-
-    echo "k3s is a lightweight Kubernetes distribution."
-    echo ""
-    echo -e "${YELLOW}${BOLD}Requires sudo access${NC}"
-    echo ""
-
-    if ! confirm "Install k3s?" "y"; then
-        fatal "k3s is required for Hecate"
-    fi
-
-    local install_opts=""
-
-    case "$K3S_ROLE" in
-        standalone)
-            # Single-node, disable traefik (we don't need ingress)
-            install_opts="--disable=traefik"
-            ;;
-        server)
-            install_opts="--disable=traefik"
-            ;;
-        agent)
-            # Agent mode - join existing cluster
-            export K3S_URL="$K3S_SERVER_URL"
-            export K3S_TOKEN="$K3S_TOKEN"
-            ;;
-    esac
-
-    info "Installing k3s (${K3S_ROLE} mode)..."
-
-    if [ "$K3S_ROLE" = "agent" ]; then
-        curl -sfL https://get.k3s.io | sh -s - agent $install_opts
-    else
-        curl -sfL https://get.k3s.io | sh -s - $install_opts
-    fi
-
-    if ! command_exists k3s; then
-        fatal "k3s installation failed"
-    fi
-
-    ok "k3s installed"
-
-    # Wait for k3s to be ready
-    info "Waiting for k3s to be ready..."
-    local retries=60
-    while [ $retries -gt 0 ]; do
-        if sudo k3s kubectl get nodes &>/dev/null; then
-            ok "k3s is ready"
-            break
-        fi
-        retries=$((retries - 1))
-        sleep 2
-    done
-
-    if [ $retries -eq 0 ]; then
-        error "k3s failed to start"
-        echo ""
-        echo -e "${YELLOW}${BOLD}Recent logs:${NC}"
-        echo ""
-        if [ "$K3S_ROLE" = "agent" ]; then
-            sudo journalctl -u k3s-agent -n 20 --no-pager 2>/dev/null || true
+        if command_exists brew; then
+            info "Installing podman via Homebrew..."
+            brew install podman
         else
-            sudo journalctl -u k3s -n 20 --no-pager 2>/dev/null || true
+            fatal "Homebrew is required to install podman on macOS"
         fi
+    elif [ "$os" = "linux" ]; then
+        echo "Podman provides rootless containers for running Hecate services."
         echo ""
-        echo -e "${CYAN}Troubleshooting:${NC}"
-        if [ "$K3S_ROLE" = "agent" ]; then
-            echo "  • Check server URL is correct and reachable"
-            echo "  • Check token matches: sudo cat /var/lib/rancher/k3s/server/node-token"
-            echo "  • Check server firewall allows port 6443"
-            echo "  • Verify server is running: systemctl status k3s"
+        echo -e "${YELLOW}${BOLD}Requires sudo for package installation${NC}"
+        echo ""
+
+        if ! confirm "Install podman?" "y"; then
+            fatal "podman is required for Hecate"
+        fi
+
+        if command_exists pacman; then
+            sudo pacman -S --noconfirm --needed podman
+        elif command_exists apt-get; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq podman
+        elif command_exists dnf; then
+            sudo dnf install -y -q podman
+        elif command_exists zypper; then
+            sudo zypper install -y podman
         else
-            echo "  • Check: sudo journalctl -u k3s -f"
-            echo "  • Verify ports are open: 6443, 8472, 10250"
+            fatal "Could not detect package manager — install podman manually"
         fi
-        echo ""
-        fatal "k3s installation failed"
     fi
 
-    # Setup kubeconfig for non-root user
-    setup_kubeconfig
-}
+    if ! command_exists podman; then
+        fatal "podman installation failed"
+    fi
 
-setup_kubeconfig() {
-    section "Setting up kubeconfig"
+    ok "podman installed"
 
-    mkdir -p "${INSTALL_DIR}"
-
-    # Copy kubeconfig and fix permissions
-    sudo cp /etc/rancher/k3s/k3s.yaml "${INSTALL_DIR}/kubeconfig"
-    sudo chown "$(id -u):$(id -g)" "${INSTALL_DIR}/kubeconfig"
-    chmod 600 "${INSTALL_DIR}/kubeconfig"
-
-    # Update server address if needed (for remote access)
-    local local_ip
-    local_ip=$(get_local_ip)
-    sed -i "s/127.0.0.1/${local_ip}/g" "${INSTALL_DIR}/kubeconfig"
-
-    # Set KUBECONFIG for current session
-    export KUBECONFIG="${INSTALL_DIR}/kubeconfig"
-
-    ok "Kubeconfig saved to ${INSTALL_DIR}/kubeconfig"
-
-    # Show join command for server mode
-    if [ "$K3S_ROLE" = "server" ]; then
-        local token
-        token=$(sudo cat /var/lib/rancher/k3s/server/node-token)
-        local join_url="https://${local_ip}:6443"
-        local join_cmd="curl -sfL https://get.k3s.io | K3S_URL=${join_url} K3S_TOKEN=${token} sh -s - agent"
-
-        # Save join script for easy distribution
-        local join_script="${INSTALL_DIR}/join-cluster.sh"
-        cat > "$join_script" << EOF
-#!/bin/bash
-# Join this machine to the Hecate cluster at ${local_ip}
-# Generated on $(date)
-# Run this script on agent nodes to join the cluster
-
-set -e
-
-echo "Joining cluster at ${join_url}..."
-curl -sfL https://get.k3s.io | K3S_URL=${join_url} K3S_TOKEN=${token} sh -s - agent
-
-echo ""
-echo "Done! This node should now appear in: kubectl get nodes"
-EOF
-        chmod +x "$join_script"
-
-        echo ""
-        echo -e "${CYAN}${BOLD}To add agent nodes:${NC}"
-        echo ""
-        echo -e "  ${BOLD}Option 1:${NC} Copy this command to agent nodes:"
-        echo ""
-        echo "  $join_cmd"
-        echo ""
-        echo -e "  ${BOLD}Option 2:${NC} Copy the join script to agents:"
-        echo ""
-        echo "    scp ${join_script} user@agent-node:~/"
-        echo "    ssh user@agent-node 'sudo ~/join-cluster.sh'"
-        echo ""
-
-        # Try to copy to clipboard
-        if command_exists xclip; then
-            echo "$join_cmd" | xclip -selection clipboard 2>/dev/null && \
-                ok "Join command copied to clipboard (xclip)"
-        elif command_exists xsel; then
-            echo "$join_cmd" | xsel --clipboard 2>/dev/null && \
-                ok "Join command copied to clipboard (xsel)"
-        elif command_exists wl-copy; then
-            echo "$join_cmd" | wl-copy 2>/dev/null && \
-                ok "Join command copied to clipboard (wl-copy)"
-        elif command_exists pbcopy; then
-            echo "$join_cmd" | pbcopy 2>/dev/null && \
-                ok "Join command copied to clipboard (pbcopy)"
-        fi
-
-        ok "Join script saved to: ${join_script}"
+    # Enable lingering for user services to survive logout
+    if command_exists loginctl; then
+        info "Enabling lingering for systemd user services..."
+        loginctl enable-linger "$(whoami)" 2>/dev/null || true
+        ok "User services will persist after logout"
     fi
 }
 
-ensure_k3s() {
-    if ! check_k3s; then
-        install_k3s
+ensure_podman() {
+    if ! check_podman; then
+        install_podman
     else
-        # k3s exists, just setup kubeconfig
-        if [ ! -f "${INSTALL_DIR}/kubeconfig" ]; then
-            setup_kubeconfig
+        # Ensure lingering is enabled
+        if command_exists loginctl; then
+            loginctl enable-linger "$(whoami)" 2>/dev/null || true
         fi
-        export KUBECONFIG="${INSTALL_DIR}/kubeconfig"
     fi
 }
 
 # -----------------------------------------------------------------------------
-# FluxCD Installation
+# Directory Layout
 # -----------------------------------------------------------------------------
 
-check_flux() {
-    if command_exists flux; then
-        ok "FluxCD CLI installed"
-        return 0
-    fi
-    return 1
-}
+create_directory_layout() {
+    section "Creating Directory Layout"
 
-install_flux() {
-    section "Installing FluxCD"
+    # Core directories
+    mkdir -p "${INSTALL_DIR}/hecate-daemon/sqlite"
+    mkdir -p "${INSTALL_DIR}/hecate-daemon/reckon-db"
+    mkdir -p "${INSTALL_DIR}/hecate-daemon/sockets"
+    mkdir -p "${INSTALL_DIR}/hecate-daemon/run"
+    mkdir -p "${INSTALL_DIR}/hecate-daemon/connectors"
+    mkdir -p "${INSTALL_DIR}/config"
+    mkdir -p "${INSTALL_DIR}/secrets"
 
-    echo "FluxCD provides GitOps-based deployment."
-    echo ""
+    # GitOps directories
+    mkdir -p "${GITOPS_DIR}/system"
+    mkdir -p "${GITOPS_DIR}/apps"
 
-    # Install flux CLI
-    if ! check_flux; then
-        info "Installing FluxCD CLI..."
-        curl -s https://fluxcd.io/install.sh | sudo bash
-        ok "FluxCD CLI installed"
-    fi
+    # Podman Quadlet directory
+    mkdir -p "${QUADLET_DIR}"
 
-    # Bootstrap flux to cluster
-    info "Bootstrapping FluxCD to cluster..."
+    # systemd user directory
+    mkdir -p "${SYSTEMD_USER_DIR}"
 
-    # Create flux-system namespace
-    kubectl create namespace flux-system 2>/dev/null || true
+    # Binary directory
+    mkdir -p "${BIN_DIR}"
 
-    # Install flux components
-    flux install --namespace=flux-system
-
-    ok "FluxCD installed in cluster"
+    ok "Directory layout created at ${INSTALL_DIR}"
 }
 
 # -----------------------------------------------------------------------------
-# GitOps Repository Setup
+# GitOps Seeding
 # -----------------------------------------------------------------------------
 
-# GitOps configuration
-# Infrastructure syncs from upstream hecate-gitops (automatic updates)
-# User apps sync from local git server (edit locally, auto-deploy)
-HECATE_GITOPS_SEED="https://github.com/hecate-social/hecate-gitops.git"
-# Git HTTP server mounts this directory
-HECATE_REPOS_DIR="/var/lib/hecate/repos"
-HECATE_BARE_REPO="${HECATE_REPOS_DIR}/hecate-gitops.git"
+seed_gitops() {
+    section "Seeding GitOps"
 
-setup_gitops_repo() {
-    section "Setting up GitOps Repository"
+    local gitops_repo="${REPO_BASE}/hecate-gitops.git"
+    local tmpdir
+    tmpdir=$(mktemp -d)
 
-    # Create repos directory for git-server
-    sudo mkdir -p "${HECATE_REPOS_DIR}"
-    sudo chown -R "${USER}:${USER}" "${HECATE_REPOS_DIR}"
+    info "Fetching Quadlet templates from hecate-gitops..."
 
-    # Clone hecate-gitops seed for local working copy
-    if [ -d "${GITOPS_DIR}/.git" ]; then
-        info "GitOps repo exists, pulling latest..."
-        cd "${GITOPS_DIR}"
-        git pull --ff-only origin main 2>/dev/null || true
+    if command_exists git; then
+        git clone --depth 1 "${gitops_repo}" "${tmpdir}" 2>/dev/null || {
+            warn "Could not clone hecate-gitops, using embedded defaults"
+            create_default_quadlet_files
+            rm -rf "${tmpdir}"
+            return
+        }
+
+        # Copy system Quadlet files (always)
+        if [ -d "${tmpdir}/quadlet/system" ]; then
+            cp "${tmpdir}/quadlet/system/"* "${GITOPS_DIR}/system/" 2>/dev/null || true
+            ok "Seeded system Quadlet files"
+        fi
+
+        # Copy reconciler
+        if [ -d "${tmpdir}/reconciler" ]; then
+            cp "${tmpdir}/reconciler/hecate-reconciler.sh" "${BIN_DIR}/hecate-reconciler"
+            chmod +x "${BIN_DIR}/hecate-reconciler"
+            ok "Installed reconciler: ${BIN_DIR}/hecate-reconciler"
+
+            cp "${tmpdir}/reconciler/hecate-reconciler.service" "${SYSTEMD_USER_DIR}/hecate-reconciler.service"
+            ok "Installed reconciler service"
+        fi
+
+        rm -rf "${tmpdir}"
     else
-        info "Cloning hecate-gitops seed..."
-        rm -rf "${GITOPS_DIR}"
-        git clone "${HECATE_GITOPS_SEED}" "${GITOPS_DIR}"
-        cd "${GITOPS_DIR}"
+        warn "git not found, using embedded defaults"
+        create_default_quadlet_files
     fi
 
-    ok "GitOps working copy ready at ${GITOPS_DIR}"
-
-    # Create bare repo for soft-serve to serve
-    if [ ! -d "${HECATE_BARE_REPO}" ]; then
-        info "Creating bare repo for local git server..."
-        git clone --bare "${GITOPS_DIR}" "${HECATE_BARE_REPO}"
-        # Enable push
-        git -C "${HECATE_BARE_REPO}" config receive.denyCurrentBranch ignore
-    fi
-
-    # Add local remote for pushing changes
-    # Uses filesystem path so push works even if soft-serve is down
-    cd "${GITOPS_DIR}"
-    if ! git remote get-url local >/dev/null 2>&1; then
-        git remote add local "${HECATE_BARE_REPO}"
-    fi
-
-    ok "Local git server repo ready at ${HECATE_BARE_REPO}"
-
-    # Apply hardware-specific patches locally
+    # Apply hardware-specific configuration
     update_hardware_config
+}
 
-    # Push to local bare repo
-    git add -A
-    git commit -m "Configure for local cluster" 2>/dev/null || true
-    git push local main 2>/dev/null || true
+create_default_quadlet_files() {
+    # Fallback: create minimal Quadlet files inline
+    cat > "${GITOPS_DIR}/system/hecate-daemon.container" << 'EOF'
+[Unit]
+Description=Hecate Daemon (core)
+After=network-online.target
+Wants=network-online.target
 
-    ok "GitOps configuration complete"
-    info "Infrastructure syncs from upstream (automatic updates)"
-    info "User apps: edit ${GITOPS_DIR}/apps/, commit, 'git push local main'"
+[Container]
+Image=ghcr.io/hecate-social/hecate-daemon:0.8.0
+ContainerName=hecate-daemon
+AutoUpdate=registry
+Network=host
+Volume=%h/.hecate/hecate-daemon:/data:Z
+EnvironmentFile=%h/.hecate/gitops/system/hecate-daemon.env
+
+# Health check: daemon socket presence
+HealthCmd=test -S /data/sockets/api.sock
+HealthInterval=30s
+HealthRetries=3
+HealthTimeout=5s
+HealthStartPeriod=15s
+
+[Service]
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=120s
+
+[Install]
+WantedBy=default.target
+EOF
+
+    cat > "${GITOPS_DIR}/system/hecate-daemon.env" << EOF
+# Hecate Daemon Configuration
+# Generated by installer on $(date -Iseconds)
+
+# Mesh
+HECATE_MESH_BOOTSTRAP=boot.macula.io:4433
+HECATE_MESH_REALM=io.macula
+
+# API (Unix socket)
+HECATE_API_SOCKET=/data/sockets/api.sock
+HECATE_DATA_DIR=/data
+
+# LLM
+HECATE_LLM_BACKEND=ollama
+HECATE_LLM_ENDPOINT=${OLLAMA_HOST}
+
+# Hardware (detected)
+HECATE_RAM_GB=${DETECTED_RAM_GB}
+HECATE_CPU_CORES=${DETECTED_CPU_CORES}
+HECATE_GPU=${DETECTED_GPU_TYPE:-none}
+EOF
+
+    ok "Created default Quadlet files"
 }
 
 update_hardware_config() {
     info "Updating hardware configuration..."
 
-    # Determine GPU type string
     local gpu_type="none"
     if [ "$DETECTED_HAS_GPU" = true ]; then
         gpu_type="${DETECTED_GPU_TYPE}"
     fi
 
-    # Update the hardware patch with detected values
-    cat > clusters/local/hardware-patch.yaml << EOF
-# Hardware configuration for this cluster
-# Generated by install script based on detected hardware
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hecate-config
-  namespace: hecate
-data:
-  HECATE_RAM_GB: "${DETECTED_RAM_GB}"
-  HECATE_CPU_CORES: "${DETECTED_CPU_CORES}"
-  HECATE_GPU: "${gpu_type}"
-  HECATE_GPU_VRAM_GB: "0"
-  OLLAMA_HOST: "${OLLAMA_HOST}"
-EOF
+    local env_file="${GITOPS_DIR}/system/hecate-daemon.env"
+
+    # Update env file with detected hardware values
+    if [ -f "${env_file}" ]; then
+        # Use sed to update existing values
+        sed -i "s|^HECATE_RAM_GB=.*|HECATE_RAM_GB=${DETECTED_RAM_GB}|" "${env_file}" 2>/dev/null || true
+        sed -i "s|^HECATE_CPU_CORES=.*|HECATE_CPU_CORES=${DETECTED_CPU_CORES}|" "${env_file}" 2>/dev/null || true
+        sed -i "s|^HECATE_GPU=.*|HECATE_GPU=${gpu_type}|" "${env_file}" 2>/dev/null || true
+        sed -i "s|^HECATE_LLM_ENDPOINT=.*|HECATE_LLM_ENDPOINT=${OLLAMA_HOST}|" "${env_file}" 2>/dev/null || true
+    fi
+
+    # Add cluster config if in cluster mode
+    if [ "$NODE_ROLE" = "cluster" ]; then
+        if [ -n "$CLUSTER_COOKIE" ]; then
+            if ! grep -q "^HECATE_ERLANG_COOKIE=" "${env_file}" 2>/dev/null; then
+                echo "" >> "${env_file}"
+                echo "# BEAM Cluster" >> "${env_file}"
+                echo "HECATE_ERLANG_COOKIE=${CLUSTER_COOKIE}" >> "${env_file}"
+            else
+                sed -i "s|^HECATE_ERLANG_COOKIE=.*|HECATE_ERLANG_COOKIE=${CLUSTER_COOKIE}|" "${env_file}" 2>/dev/null || true
+            fi
+        fi
+        if [ -n "$CLUSTER_PEERS" ]; then
+            if ! grep -q "^HECATE_CLUSTER_PEERS=" "${env_file}" 2>/dev/null; then
+                echo "HECATE_CLUSTER_PEERS=${CLUSTER_PEERS}" >> "${env_file}"
+            else
+                sed -i "s|^HECATE_CLUSTER_PEERS=.*|HECATE_CLUSTER_PEERS=${CLUSTER_PEERS}|" "${env_file}" 2>/dev/null || true
+            fi
+        fi
+    fi
 
     ok "Hardware config: ${DETECTED_RAM_GB}GB RAM, ${DETECTED_CPU_CORES} cores, GPU: ${gpu_type}"
     if [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
@@ -1036,101 +840,299 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
-# LLM Provider Secrets
+# LLM Provider Configuration
 # -----------------------------------------------------------------------------
 
 setup_llm_secrets() {
     section "LLM Provider Configuration"
 
-    # Check for API keys in environment
+    local secrets_file="${INSTALL_DIR}/secrets/llm-providers.env"
     local has_keys=false
-    local secret_args=""
 
+    # Check for API keys in environment
     if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
         info "Found ANTHROPIC_API_KEY in environment"
-        secret_args="${secret_args} --from-literal=ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}"
         has_keys=true
     fi
 
     if [ -n "${OPENAI_API_KEY:-}" ]; then
         info "Found OPENAI_API_KEY in environment"
-        secret_args="${secret_args} --from-literal=OPENAI_API_KEY=${OPENAI_API_KEY}"
         has_keys=true
     fi
 
     if [ -n "${GOOGLE_API_KEY:-}" ]; then
         info "Found GOOGLE_API_KEY in environment"
-        secret_args="${secret_args} --from-literal=GOOGLE_API_KEY=${GOOGLE_API_KEY}"
         has_keys=true
     fi
 
     if [ "$has_keys" = true ]; then
-        # Create or update the secret
-        kubectl create namespace hecate 2>/dev/null || true
-        kubectl delete secret hecate-secrets -n hecate 2>/dev/null || true
-        eval "kubectl create secret generic hecate-secrets -n hecate ${secret_args}"
-        ok "LLM provider secrets configured"
+        cat > "${secrets_file}" << EOF
+# LLM Provider API Keys
+# Generated by installer on $(date -Iseconds)
+EOF
+        chmod 600 "${secrets_file}"
+
+        [ -n "${ANTHROPIC_API_KEY:-}" ] && echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}" >> "${secrets_file}"
+        [ -n "${OPENAI_API_KEY:-}" ] && echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> "${secrets_file}"
+        [ -n "${GOOGLE_API_KEY:-}" ] && echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> "${secrets_file}"
+
+        ok "LLM provider secrets saved to ${secrets_file}"
     else
         info "No LLM API keys found in environment"
         info "To add later: export ANTHROPIC_API_KEY=... and re-run install"
-        info "Or use: kubectl create secret generic hecate-secrets -n hecate --from-literal=ANTHROPIC_API_KEY=..."
     fi
 }
 
 # -----------------------------------------------------------------------------
-# Apply Hardware Config Directly
+# Reconciler Installation
 # -----------------------------------------------------------------------------
 
-apply_hardware_config() {
-    # Apply hardware config as a patch directly to the cluster
-    # This allows node-specific settings without modifying gitops
-    info "Applying hardware configuration..."
+install_reconciler() {
+    section "Installing Reconciler"
 
-    kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hecate-hardware
-  namespace: hecate
-data:
-  HECATE_RAM_GB: "${DETECTED_RAM_GB}"
-  HECATE_CPU_CORES: "${DETECTED_CPU_CORES}"
-  HECATE_GPU: "${DETECTED_GPU_TYPE:-none}"
-  HECATE_GPU_VRAM_GB: "${DETECTED_GPU_VRAM:-0}"
-  OLLAMA_HOST: "${OLLAMA_HOST:-http://localhost:11434}"
+    # Check if reconciler was already copied during seed_gitops
+    if [ ! -x "${BIN_DIR}/hecate-reconciler" ]; then
+        warn "Reconciler not found — creating embedded version"
+        create_embedded_reconciler
+    fi
+
+    # Ensure service file exists
+    if [ ! -f "${SYSTEMD_USER_DIR}/hecate-reconciler.service" ]; then
+        cat > "${SYSTEMD_USER_DIR}/hecate-reconciler.service" << EOF
+[Unit]
+Description=Hecate Reconciler (watches gitops, manages Quadlet units)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/hecate-reconciler --watch
+Restart=on-failure
+RestartSec=10s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hecate-reconciler
+
+# Environment
+Environment=HECATE_GITOPS_DIR=%h/.hecate/gitops
+
+[Install]
+WantedBy=default.target
 EOF
-    ok "Hardware config applied"
+    fi
+
+    # Install inotify-tools if not available (needed for watch mode)
+    if ! command_exists inotifywait; then
+        info "Installing inotify-tools (for filesystem watching)..."
+        if command_exists pacman; then
+            sudo pacman -S --noconfirm --needed inotify-tools
+        elif command_exists apt-get; then
+            sudo apt-get install -y -qq inotify-tools
+        elif command_exists dnf; then
+            sudo dnf install -y -q inotify-tools
+        elif command_exists zypper; then
+            sudo zypper install -y inotify-tools
+        else
+            warn "Could not install inotify-tools — reconciler will use polling"
+        fi
+    fi
+
+    # Reload and enable
+    systemctl --user daemon-reload
+    systemctl --user enable hecate-reconciler.service
+    ok "Reconciler enabled"
+}
+
+create_embedded_reconciler() {
+    # Minimal embedded reconciler for when git clone fails
+    cat > "${BIN_DIR}/hecate-reconciler" << 'RECONCILER'
+#!/usr/bin/env bash
+# hecate-reconciler — Syncs Quadlet .container files from gitops to systemd
+set -euo pipefail
+
+GITOPS_DIR="${HECATE_GITOPS_DIR:-${HOME}/.hecate/gitops}"
+QUADLET_DIR="${HOME}/.config/containers/systemd"
+LOG_PREFIX="[hecate-reconciler]"
+
+log_info()  { echo "${LOG_PREFIX} INFO  $(date +%H:%M:%S) $*"; }
+log_warn()  { echo "${LOG_PREFIX} WARN  $(date +%H:%M:%S) $*" >&2; }
+
+preflight() {
+    command -v podman &>/dev/null || { echo "podman not installed" >&2; exit 1; }
+    command -v systemctl &>/dev/null || { echo "systemctl not available" >&2; exit 1; }
+    [ -d "${GITOPS_DIR}" ] || { echo "gitops dir not found: ${GITOPS_DIR}" >&2; exit 1; }
+    mkdir -p "${QUADLET_DIR}"
+}
+
+desired_units() {
+    local files=()
+    for dir in "${GITOPS_DIR}/system" "${GITOPS_DIR}/apps"; do
+        if [ -d "${dir}" ]; then
+            for f in "${dir}"/*.container; do
+                [ -f "${f}" ] && files+=("${f}")
+            done
+        fi
+    done
+    [ ${#files[@]} -gt 0 ] && printf '%s\n' "${files[@]}"
+}
+
+actual_units() {
+    local files=()
+    for f in "${QUADLET_DIR}"/*.container; do
+        if [ -L "${f}" ]; then
+            local target
+            target=$(readlink -f "${f}" 2>/dev/null || true)
+            if [[ "${target}" == "${GITOPS_DIR}"/* ]]; then
+                files+=("${f}")
+            fi
+        fi
+    done
+    [ ${#files[@]} -gt 0 ] && printf '%s\n' "${files[@]}"
+}
+
+reconcile() {
+    local changed=0
+
+    while IFS= read -r src; do
+        local name dest
+        name=$(basename "${src}")
+        dest="${QUADLET_DIR}/${name}"
+
+        if [ -L "${dest}" ]; then
+            local current_target
+            current_target=$(readlink -f "${dest}")
+            [ "${current_target}" = "${src}" ] && continue
+            log_info "UPDATE ${name}"
+            rm "${dest}"
+        elif [ -e "${dest}" ]; then
+            log_warn "SKIP ${name} (non-symlink exists)"
+            continue
+        else
+            log_info "ADD ${name}"
+        fi
+
+        ln -s "${src}" "${dest}"
+        changed=1
+    done < <(desired_units)
+
+    while IFS= read -r dest; do
+        local target
+        target=$(readlink -f "${dest}")
+        if [ ! -f "${target}" ]; then
+            local name unit_name
+            name=$(basename "${dest}")
+            unit_name="${name%.container}.service"
+            log_info "REMOVE ${name}"
+            systemctl --user stop "${unit_name}" 2>/dev/null || true
+            rm "${dest}"
+            changed=1
+        fi
+    done < <(actual_units)
+
+    if [ ${changed} -eq 1 ]; then
+        log_info "Reloading systemd..."
+        systemctl --user daemon-reload
+        while IFS= read -r src; do
+            local name unit_name
+            name=$(basename "${src}")
+            unit_name="${name%.container}.service"
+            if ! systemctl --user is-active --quiet "${unit_name}" 2>/dev/null; then
+                log_info "Starting ${unit_name}..."
+                systemctl --user start "${unit_name}" || log_warn "Failed to start ${unit_name}"
+            fi
+        done < <(desired_units)
+        log_info "Reconciliation complete"
+    else
+        log_info "No changes detected"
+    fi
+}
+
+show_status() {
+    echo "=== Hecate Reconciler Status ==="
+    echo ""
+    echo "Gitops dir:  ${GITOPS_DIR}"
+    echo "Quadlet dir: ${QUADLET_DIR}"
+    echo ""
+    echo "--- Desired State (gitops) ---"
+    while IFS= read -r src; do
+        echo "  $(basename "${src}")"
+    done < <(desired_units)
+    echo ""
+    echo "--- Actual State (systemd) ---"
+    for f in "${QUADLET_DIR}"/*.container; do
+        [ -f "${f}" ] || [ -L "${f}" ] || continue
+        local name unit_name status sym=""
+        name=$(basename "${f}")
+        unit_name="${name%.container}.service"
+        status=$(systemctl --user is-active "${unit_name}" 2>/dev/null || echo "inactive")
+        [ -L "${f}" ] && sym=" -> $(readlink "${f}")"
+        echo "  ${name} [${status}]${sym}"
+    done
+}
+
+watch_loop() {
+    log_info "Watching ${GITOPS_DIR} for changes..."
+    log_info "Initial reconciliation..."
+    reconcile
+    while true; do
+        if command -v inotifywait &>/dev/null; then
+            inotifywait -r -q -e create -e delete -e modify -e moved_to -e moved_from \
+                --timeout 300 "${GITOPS_DIR}/system" "${GITOPS_DIR}/apps" 2>/dev/null || true
+        else
+            sleep 30
+        fi
+        sleep 1
+        log_info "Change detected, reconciling..."
+        reconcile
+    done
+}
+
+case "${1:---watch}" in
+    --once)   preflight; reconcile ;;
+    --watch)  preflight; watch_loop ;;
+    --status) preflight; show_status ;;
+    --help|-h)
+        echo "Usage: hecate-reconciler [--once|--watch|--status]"
+        echo ""
+        echo "  --once    One-shot reconciliation"
+        echo "  --watch   Continuous watch mode (default)"
+        echo "  --status  Show current state"
+        ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+esac
+RECONCILER
+
+    chmod +x "${BIN_DIR}/hecate-reconciler"
+    ok "Embedded reconciler installed"
 }
 
 # -----------------------------------------------------------------------------
-# Deploy to Cluster
+# Deploy Hecate
 # -----------------------------------------------------------------------------
 
 deploy_hecate() {
-    section "Deploying Hecate to Cluster"
+    section "Deploying Hecate"
 
-    cd "${GITOPS_DIR}"
-
-    # Apply secrets first (not in gitops - local only)
+    # Configure LLM secrets
     setup_llm_secrets
 
-    # Apply hardware config (node-specific, not in gitops)
-    apply_hardware_config
+    # Run reconciler once to symlink Quadlet files
+    info "Running initial reconciliation..."
+    "${BIN_DIR}/hecate-reconciler" --once
 
-    # Apply flux sync - watches upstream for base manifests
-    kubectl apply -f flux-system/gotk-sync.yaml 2>/dev/null || true
+    # Start the reconciler service
+    systemctl --user start hecate-reconciler.service
+    ok "Reconciler started"
 
-    # Direct apply for immediate deployment (using clusters/local which includes infra)
-    kubectl apply -k clusters/local/
-
-    # Wait for daemon to be ready
-    info "Waiting for daemon pods..."
+    # Wait for daemon to start
+    info "Waiting for hecate-daemon to start..."
     local retries=60
+    local socket_path="${INSTALL_DIR}/hecate-daemon/sockets/api.sock"
     while [ $retries -gt 0 ]; do
-        local ready
-        ready=$(kubectl get pods -n hecate -l app=hecate-daemon -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
-        if [[ "$ready" == *"True"* ]]; then
-            ok "Daemon is running"
+        if [ -S "${socket_path}" ]; then
+            ok "Daemon socket ready at ${socket_path}"
             break
         fi
         retries=$((retries - 1))
@@ -1138,20 +1140,14 @@ deploy_hecate() {
     done
 
     if [ $retries -eq 0 ]; then
-        warn "Daemon pods not ready yet. Check with: kubectl get pods -n hecate"
+        warn "Daemon socket not ready yet"
+        echo ""
+        echo -e "${CYAN}Troubleshooting:${NC}"
+        echo "  systemctl --user status hecate-daemon"
+        echo "  journalctl --user -u hecate-daemon -f"
+        echo "  podman logs hecate-daemon"
+        echo ""
     fi
-
-    # Wait for socket to appear
-    info "Waiting for daemon socket..."
-    retries=30
-    while [ $retries -gt 0 ]; do
-        if [ -S "/run/hecate/daemon.sock" ]; then
-            ok "Daemon socket ready at /run/hecate/daemon.sock"
-            break
-        fi
-        retries=$((retries - 1))
-        sleep 1
-    done
 }
 
 # -----------------------------------------------------------------------------
@@ -1205,7 +1201,7 @@ install_ollama() {
 
     info "Running Ollama install script..."
     # Run Ollama installer (disable strict mode - their script has VERSION_ID bug on Arch)
-        ( set +eu; curl -fsSL https://ollama.com/install.sh | sh ) || true
+    ( set +eu; curl -fsSL https://ollama.com/install.sh | sh ) || true
 
     if ! command_exists ollama; then
         warn "Ollama installation failed"
@@ -1357,128 +1353,56 @@ setup_ollama() {
 }
 
 # -----------------------------------------------------------------------------
-# Terminal Configuration
+# Web UI Installation
 # -----------------------------------------------------------------------------
 
-check_terminal_capabilities() {
-    section "Checking Terminal Capabilities"
+install_webkit_deps() {
+    # webkit2gtk is required by hecate-web (Tauri runtime)
+    # Check using pkg-config for the 4.1 API (Tauri v2 requirement)
+    if command_exists pkg-config && pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
+        return 0
+    fi
 
-    local term_ok=true
-    local colors=0
-
-    # Check TERM variable
-    if [ -z "${TERM:-}" ] || [ "$TERM" = "dumb" ]; then
-        warn "TERM is not set or is 'dumb'"
-        term_ok=false
+    info "Installing webkit2gtk (required by Hecate Web)..."
+    if command_exists pacman; then
+        sudo pacman -S --noconfirm --needed webkit2gtk-4.1
+    elif command_exists apt-get; then
+        sudo apt-get update -qq && sudo apt-get install -y -qq libwebkit2gtk-4.1-dev
+    elif command_exists dnf; then
+        sudo dnf install -y -q webkit2gtk4.1-devel
+    elif command_exists zypper; then
+        sudo zypper install -y webkit2gtk3-devel
     else
-        ok "TERM: $TERM"
+        warn "Could not detect package manager — install webkit2gtk-4.1 manually"
+        return 1
     fi
 
-    # Check color support
-    if command_exists tput; then
-        colors=$(tput colors 2>/dev/null || echo "0")
-        if [ "$colors" -ge 256 ]; then
-            ok "Colors: $colors (excellent)"
-        elif [ "$colors" -ge 8 ]; then
-            warn "Colors: $colors (limited, recommend 256)"
-            term_ok=false
-        else
-            warn "Colors: $colors (poor)"
-            term_ok=false
-        fi
-    else
-        warn "tput not available, cannot detect colors"
-    fi
-
-    # Check if we're over SSH
-    if [ -n "${SSH_TTY:-}" ] || [ -n "${SSH_CONNECTION:-}" ]; then
-        info "Running over SSH"
-    fi
-
-    # If terminal is not optimal, configure it
-    if [ "$term_ok" = false ]; then
-        configure_terminal
-    fi
+    ok "webkit2gtk installed"
 }
 
-configure_terminal() {
-    info "Configuring terminal for TUI..."
-
-    # Create a wrapper script that ensures proper terminal settings
-    mkdir -p "$BIN_DIR"
-    cat > "${BIN_DIR}/hecate-tui-wrapped" << 'TUIWRAPPER'
-#!/usr/bin/env bash
-# Wrapper to ensure proper terminal settings for Hecate TUI
-
-# Ensure TERM is set for 256 colors
-if [ -z "$TERM" ] || [ "$TERM" = "dumb" ] || [ "$TERM" = "vt100" ]; then
-    export TERM="xterm-256color"
-fi
-
-# Check if TERM supports 256 colors, upgrade if not
-case "$TERM" in
-    xterm|screen|tmux|rxvt)
-        export TERM="${TERM}-256color"
-        ;;
-esac
-
-# Run the actual TUI
-exec "$(dirname "$0")/hecate-tui" "$@"
-TUIWRAPPER
-    chmod +x "${BIN_DIR}/hecate-tui-wrapped"
-
-    # Add terminal config to shell profile
-    local shell_profile=""
-    if [ -f "$HOME/.zshrc" ]; then
-        shell_profile="$HOME/.zshrc"
-    elif [ -f "$HOME/.bashrc" ]; then
-        shell_profile="$HOME/.bashrc"
-    fi
-
-    if [ -n "$shell_profile" ]; then
-        if ! grep -q "# Hecate terminal config" "$shell_profile" 2>/dev/null; then
-            cat >> "$shell_profile" << 'TERMCONFIG'
-
-# Hecate terminal config
-# Ensure 256 color support for TUI
-if [ "$TERM" = "xterm" ] || [ "$TERM" = "screen" ]; then
-    export TERM="${TERM}-256color"
-fi
-TERMCONFIG
-            ok "Added terminal config to $shell_profile"
-        fi
-    fi
-
-    ok "Terminal configured for 256-color support"
-    info "Use 'hecate-tui-wrapped' if colors are still broken"
-}
-
-# -----------------------------------------------------------------------------
-# TUI Installation
-# -----------------------------------------------------------------------------
-
-install_tui() {
+install_web() {
     if [ "$ROLE_WORKSTATION" = false ]; then
         return
     fi
 
-    # Check terminal capabilities first
-    check_terminal_capabilities
+    section "Installing Hecate Web"
 
-    section "Installing Hecate TUI"
+    install_webkit_deps || {
+        warn "Skipping Hecate Web (missing webkit2gtk)"
+        return
+    }
 
     local os arch version url
     os=$(detect_os)
     arch=$(detect_arch)
 
-    version=$(get_latest_release "hecate-tui")
+    version=$(get_latest_release "hecate-web")
     if [ -z "$version" ]; then
         version="v0.1.0"
     fi
 
-    url="${REPO_BASE}/hecate-tui/releases/download/${version}/hecate-tui-${os}-${arch}.tar.gz"
+    url="${REPO_BASE}/hecate-web/releases/download/${version}/hecate-web-${os}-${arch}.tar.gz"
 
-    mkdir -p "$BIN_DIR"
     local tmpfile
     tmpfile=$(mktemp)
 
@@ -1486,9 +1410,9 @@ install_tui() {
     tar -xzf "$tmpfile" -C "$BIN_DIR" 2>/dev/null || tar -xzf "$tmpfile" -C "$BIN_DIR"
     rm -f "$tmpfile"
 
-    chmod +x "${BIN_DIR}/hecate-tui"
+    chmod +x "${BIN_DIR}/hecate-web"
 
-    ok "Hecate TUI ${version} installed"
+    ok "Hecate Web ${version} installed"
 }
 
 # -----------------------------------------------------------------------------
@@ -1498,95 +1422,109 @@ install_tui() {
 install_cli_wrapper() {
     section "Installing CLI Wrapper"
 
-    mkdir -p "$BIN_DIR"
-
     cat > "${BIN_DIR}/hecate" << 'WRAPPER'
 #!/usr/bin/env bash
-# Hecate CLI wrapper - manages hecate via k3s
+# Hecate CLI wrapper — manages hecate via systemd + podman
 set -euo pipefail
 
 HECATE_DIR="${HECATE_DIR:-$HOME/.hecate}"
-KUBECONFIG="${HECATE_DIR}/kubeconfig"
-SOCKET="/run/hecate/daemon.sock"
-
-export KUBECONFIG
-
-kubectl_hecate() {
-    kubectl -n hecate "$@"
-}
+SOCKET="${HECATE_DIR}/hecate-daemon/sockets/api.sock"
 
 case "${1:-help}" in
     start)
         echo "Starting Hecate daemon..."
-        kubectl_hecate rollout restart daemonset/hecate-daemon
-        kubectl_hecate rollout status daemonset/hecate-daemon
+        systemctl --user start hecate-daemon.service
+        echo "Started."
         ;;
     stop)
-        echo "Scaling down Hecate daemon..."
-        kubectl_hecate patch daemonset hecate-daemon -p '{"spec":{"template":{"spec":{"nodeSelector":{"non-existing":"true"}}}}}'
+        echo "Stopping Hecate daemon..."
+        systemctl --user stop hecate-daemon.service
+        echo "Stopped."
         ;;
     restart)
         echo "Restarting Hecate daemon..."
-        kubectl_hecate rollout restart daemonset/hecate-daemon
+        systemctl --user restart hecate-daemon.service
+        echo "Restarted."
         ;;
     status)
-        kubectl_hecate get pods -o wide
+        echo "=== Hecate Services ==="
         echo ""
-        kubectl_hecate get daemonset
+        systemctl --user list-units 'hecate-*' --no-pager 2>/dev/null || true
+        echo ""
+        if [ -S "$SOCKET" ]; then
+            echo "Daemon socket: ${SOCKET} (ready)"
+        else
+            echo "Daemon socket: ${SOCKET} (not found)"
+        fi
         ;;
     logs)
-        kubectl_hecate logs -l app=hecate-daemon -f "${@:2}"
+        journalctl --user -u hecate-daemon -f "${@:2}"
         ;;
     update)
-        echo "Updating Hecate..."
-        kubectl_hecate set image daemonset/hecate-daemon daemon=ghcr.io/hecate-social/hecate-daemon:main
-        kubectl_hecate rollout status daemonset/hecate-daemon
+        echo "Pulling latest images..."
+        podman auto-update 2>/dev/null || true
+        echo "Updated."
         ;;
     health)
         if [ -S "$SOCKET" ]; then
             curl -s --unix-socket "$SOCKET" http://localhost/health
+            echo ""
         else
-            curl -s http://localhost:4444/health
+            echo "Daemon socket not found: ${SOCKET}"
+            exit 1
         fi
         ;;
     identity)
         if [ -S "$SOCKET" ]; then
             curl -s --unix-socket "$SOCKET" http://localhost/identity
+            echo ""
         else
-            curl -s http://localhost:4444/identity
+            echo "Daemon socket not found: ${SOCKET}"
+            exit 1
         fi
         ;;
-    nodes)
-        kubectl get nodes -o wide
+    reconcile)
+        echo "Running reconciliation..."
+        hecate-reconciler --once
         ;;
-    gitops)
-        echo "GitOps directory: ${HECATE_DIR}/gitops"
-        echo ""
-        echo "Edit manifests and commit to apply changes:"
-        echo "  cd ${HECATE_DIR}/gitops"
-        echo "  # edit files..."
-        echo "  git add -A && git commit -m 'Update'"
-        echo "  kubectl apply -k hecate/"
+    install)
+        plugin="${2:-}"
+        if [ -z "$plugin" ]; then
+            echo "Usage: hecate install <plugin>"
+            echo ""
+            echo "Available plugins:"
+            echo "  trader   - Trading agent"
+            echo "  martha   - AI agent"
+            exit 1
+        fi
+        echo "Installing ${plugin}..."
+        # Copy plugin Quadlet files to gitops/apps/
+        # The reconciler will pick them up automatically
+        echo "Copy plugin .container files to ${HECATE_DIR}/gitops/apps/"
+        echo "The reconciler will install them automatically."
         ;;
     *)
-        echo "Hecate - Powered by Macula"
+        echo "Hecate — Powered by Macula"
         echo ""
         echo "Usage: hecate <command>"
         echo ""
         echo "Commands:"
-        echo "  start      Restart daemon pods"
-        echo "  stop       Scale down daemon"
-        echo "  restart    Rolling restart"
-        echo "  status     Show pod status"
-        echo "  logs       View daemon logs"
-        echo "  update     Pull latest image"
-        echo "  health     Check daemon health"
-        echo "  identity   Show identity"
-        echo "  nodes      List cluster nodes"
-        echo "  gitops     Show GitOps directory"
+        echo "  start       Start daemon"
+        echo "  stop        Stop daemon"
+        echo "  restart     Restart daemon"
+        echo "  status      Show service status"
+        echo "  logs        View daemon logs"
+        echo "  update      Pull latest images"
+        echo "  health      Check daemon health"
+        echo "  identity    Show node identity"
+        echo "  reconcile   Run manual reconciliation"
         echo ""
-        echo "TUI:"
-        echo "  hecate-tui    Launch terminal UI"
+        echo "Desktop:"
+        echo "  hecate-web  Launch desktop app"
+        echo ""
+        echo "Data:    ${HECATE_DIR}"
+        echo "GitOps:  ${HECATE_DIR}/gitops"
+        echo ""
         ;;
 esac
 WRAPPER
@@ -1614,7 +1552,6 @@ setup_path() {
                 echo "" >> "$shell_profile"
                 echo "# Hecate" >> "$shell_profile"
                 echo "export PATH=\"\$PATH:$BIN_DIR\"" >> "$shell_profile"
-                echo "export KUBECONFIG=\"${INSTALL_DIR}/kubeconfig\"" >> "$shell_profile"
             fi
         fi
 
@@ -1635,39 +1572,42 @@ show_summary() {
 
     echo -e "${GREEN}${BOLD}Hecate is ready.${NC}"
     echo ""
-    echo -e "${BOLD}Cluster:${NC}"
-    echo -e "  Role:     ${K3S_ROLE}"
-    echo -e "  Nodes:    $(kubectl get nodes --no-headers 2>/dev/null | wc -l)"
+    echo -e "${BOLD}Node:${NC}"
+    echo -e "  Role:     ${NODE_ROLE}"
+    echo -e "  IP:       ${local_ip}"
     echo ""
     echo -e "${BOLD}Components:${NC}"
-    echo -e "  ${CYAN}hecate${NC}       - CLI wrapper"
-    [ "$ROLE_WORKSTATION" = true ] && echo -e "  ${CYAN}hecate-tui${NC}   - Terminal UI"
+    echo -e "  ${CYAN}hecate${NC}            - CLI wrapper"
+    echo -e "  ${CYAN}hecate-reconciler${NC} - GitOps reconciler"
+    [ "$ROLE_WORKSTATION" = true ] && echo -e "  ${CYAN}hecate-web${NC}        - Desktop app"
     if [ "$ROLE_AI" = true ] && command_exists ollama; then
-        echo -e "  ${CYAN}ollama${NC}       - LLM backend (local)"
+        echo -e "  ${CYAN}ollama${NC}            - LLM backend (local)"
     elif [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
-        echo -e "  ${CYAN}ollama${NC}       - LLM backend (${OLLAMA_HOST})"
+        echo -e "  ${CYAN}ollama${NC}            - LLM backend (${OLLAMA_HOST})"
     fi
     echo ""
     echo -e "${BOLD}Commands:${NC}"
-    echo -e "  hecate status     - Pod status"
-    echo -e "  hecate logs       - View logs"
-    [ "$ROLE_WORKSTATION" = true ] && echo -e "  hecate-tui        - Launch TUI"
+    echo -e "  hecate status      - Service status"
+    echo -e "  hecate logs        - View logs"
+    echo -e "  hecate health      - Check health"
+    [ "$ROLE_WORKSTATION" = true ] && echo -e "  hecate-web         - Launch desktop app"
     echo ""
-    echo -e "Socket:    /run/hecate/daemon.sock"
-    echo -e "API:       http://localhost:4444"
+    echo -e "Socket:    ${INSTALL_DIR}/hecate-daemon/sockets/api.sock"
     echo -e "Ollama:    ${OLLAMA_HOST}"
     echo -e "GitOps:    ${GITOPS_DIR}"
     echo ""
 
-    if [ "$K3S_ROLE" = "server" ]; then
-        echo -e "${CYAN}${BOLD}Join token for agents:${NC}"
-        echo ""
-        local token
-        token=$(sudo cat /var/lib/rancher/k3s/server/node-token 2>/dev/null || echo "N/A")
-        echo "  K3S_URL=https://${local_ip}:6443"
-        echo "  K3S_TOKEN=${token}"
+    if [ "$NODE_ROLE" = "cluster" ]; then
+        echo -e "${CYAN}${BOLD}BEAM Cluster:${NC}"
+        echo -e "  Cookie: ${CLUSTER_COOKIE}"
+        [ -n "$CLUSTER_PEERS" ] && echo -e "  Peers:  ${CLUSTER_PEERS}"
         echo ""
     fi
+
+    echo -e "${DIM}To install plugins:${NC}"
+    echo -e "  Copy .container files to ${GITOPS_DIR}/apps/"
+    echo -e "  The reconciler will pick them up automatically."
+    echo ""
 }
 
 # -----------------------------------------------------------------------------
@@ -1675,12 +1615,12 @@ show_summary() {
 # -----------------------------------------------------------------------------
 
 show_help() {
-    echo "Hecate Node Installer (k3s Edition)"
+    echo "Hecate Node Installer (systemd + podman)"
     echo ""
     echo "Usage: curl -fsSL https://hecate.io/install.sh | bash"
     echo ""
     echo "Options:"
-    echo "  --daemon-only     Install daemon without TUI"
+    echo "  --daemon-only     Install daemon without desktop app"
     echo "  --headless        Non-interactive mode"
     echo "  --help            Show this help"
     echo ""
@@ -1701,10 +1641,10 @@ main() {
 
     show_banner
     detect_hardware
-    select_k3s_role
+    select_node_role
 
     # Inference mode has a different flow
-    if [ "$K3S_ROLE" = "inference" ]; then
+    if [ "$NODE_ROLE" = "inference" ]; then
         run_inference_install
         return
     fi
@@ -1713,16 +1653,16 @@ main() {
 
     echo ""
     echo "This installer will set up:"
-    echo "  • k3s (${K3S_ROLE} mode)"
-    echo "  • FluxCD (GitOps)"
-    echo "  • Hecate daemon (DaemonSet)"
-    [ "$ROLE_WORKSTATION" = true ] && echo "  • Hecate TUI"
+    echo "  - podman (rootless containers)"
+    echo "  - hecate-reconciler (GitOps watcher)"
+    echo "  - hecate-daemon (Podman Quadlet)"
+    [ "$ROLE_WORKSTATION" = true ] && echo "  - hecate-web (desktop app)"
     if [ "$ROLE_AI" = true ]; then
-        echo "  • Ollama (local)"
+        echo "  - Ollama (local)"
     elif [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
-        echo "  • Ollama (remote: ${OLLAMA_HOST})"
+        echo "  - Ollama (remote: ${OLLAMA_HOST})"
     fi
-    echo "  • Firewall rules"
+    echo "  - Firewall rules"
     echo ""
 
     if ! confirm "Continue with installation?" "y"; then
@@ -1731,12 +1671,13 @@ main() {
     fi
 
     configure_firewall
-    ensure_k3s
-    install_flux
-    setup_gitops_repo
+    ensure_podman
+    create_directory_layout
+    seed_gitops
+    install_reconciler
     deploy_hecate
     setup_ollama
-    install_tui
+    install_web
     install_cli_wrapper
     setup_path
 
@@ -1750,8 +1691,8 @@ main() {
 run_inference_install() {
     echo ""
     echo "This installer will set up:"
-    echo "  • Ollama (LLM inference server)"
-    echo "  • Firewall rules (port 11434)"
+    echo "  - Ollama (LLM inference server)"
+    echo "  - Firewall rules (port 11434)"
     echo ""
 
     if ! confirm "Continue with installation?" "y"; then
@@ -1788,7 +1729,6 @@ install_ollama_server() {
         # Check if ollama.service exists
         if systemctl list-unit-files ollama.service &>/dev/null && \
            systemctl list-unit-files ollama.service | grep -q ollama; then
-            # Service exists, add override
             sudo mkdir -p /etc/systemd/system/ollama.service.d
             cat << 'EOF' | sudo tee /etc/systemd/system/ollama.service.d/override.conf > /dev/null
 [Service]
@@ -1799,7 +1739,6 @@ EOF
             sudo systemctl restart ollama
             ok "Ollama configured for network access (0.0.0.0:11434)"
         else
-            # No service file - create one
             info "Creating systemd service for Ollama..."
             cat << EOF | sudo tee /etc/systemd/system/ollama.service > /dev/null
 [Unit]
@@ -1820,7 +1759,6 @@ EOF
             sudo systemctl enable ollama
             sudo systemctl start ollama
             sleep 2
-            # Check if service started
             if sudo systemctl is-active --quiet ollama; then
                 ok "Ollama service created and started (0.0.0.0:11434)"
             else

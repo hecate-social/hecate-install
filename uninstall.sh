@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 #
-# Hecate Node Uninstaller (k3s Edition)
+# Hecate Node Uninstaller (systemd + podman)
 # Usage: curl -fsSL https://hecate.io/uninstall.sh | bash
 #
 set -euo pipefail
 
 INSTALL_DIR="${HECATE_INSTALL_DIR:-$HOME/.hecate}"
 BIN_DIR="${HECATE_BIN_DIR:-$HOME/.local/bin}"
-KUBECONFIG="${INSTALL_DIR}/kubeconfig"
 GITOPS_DIR="${INSTALL_DIR}/gitops"
+QUADLET_DIR="${HOME}/.config/containers/systemd"
+SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 
 # Colors
 if [ -t 1 ]; then
@@ -53,49 +54,39 @@ echo "    🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪�
 echo ""
 
 # -----------------------------------------------------------------------------
-# Detect Installation Type
+# Detect Installation
 # -----------------------------------------------------------------------------
 
 section "Detecting Installation"
 
-FOUND_K3S=false
-FOUND_HECATE_NS=false
-FOUND_FLUX=false
-FOUND_KUBECONFIG=false
+FOUND_RECONCILER=false
+FOUND_DAEMON=false
+FOUND_QUADLET_LINKS=false
 FOUND_CLI=false
-FOUND_TUI=false
+FOUND_WEB=false
 FOUND_GITOPS=false
 FOUND_SOCKET=false
 
-# Legacy Docker Compose detection
-FOUND_LEGACY_COMPOSE=false
-FOUND_LEGACY_CONTAINERS=false
-
-# Check k3s
-if command_exists k3s; then
-    FOUND_K3S=true
-    k3s_version=$(k3s --version 2>/dev/null | head -1 | awk '{print $3}' || echo "unknown")
-    echo -e "  ${GREEN}+${NC} k3s installed: ${k3s_version}"
+# Check reconciler service
+if systemctl --user is-enabled hecate-reconciler.service &>/dev/null; then
+    FOUND_RECONCILER=true
+    echo -e "  ${GREEN}+${NC} Reconciler service: enabled"
 fi
 
-# Check kubeconfig
-if [ -f "$KUBECONFIG" ]; then
-    FOUND_KUBECONFIG=true
-    echo -e "  ${GREEN}+${NC} Kubeconfig: ${KUBECONFIG}"
-    export KUBECONFIG
+# Check daemon service (Quadlet-generated)
+if systemctl --user is-active hecate-daemon.service &>/dev/null; then
+    FOUND_DAEMON=true
+    echo -e "  ${GREEN}+${NC} Daemon: running"
+elif systemctl --user list-unit-files 'hecate-daemon*' --no-pager 2>/dev/null | grep -q hecate-daemon; then
+    FOUND_DAEMON=true
+    echo -e "  ${GREEN}+${NC} Daemon: installed (not running)"
 fi
 
-# Check hecate namespace in k3s
-if [ "$FOUND_K3S" = true ] && [ "$FOUND_KUBECONFIG" = true ]; then
-    if kubectl get namespace hecate &>/dev/null; then
-        FOUND_HECATE_NS=true
-        echo -e "  ${GREEN}+${NC} Hecate namespace in cluster"
-    fi
-
-    if kubectl get namespace flux-system &>/dev/null; then
-        FOUND_FLUX=true
-        echo -e "  ${GREEN}+${NC} FluxCD installed"
-    fi
+# Check Quadlet symlinks
+if ls "${QUADLET_DIR}"/hecate-*.container 2>/dev/null | head -1 &>/dev/null; then
+    FOUND_QUADLET_LINKS=true
+    count=$(ls "${QUADLET_DIR}"/hecate-*.container 2>/dev/null | wc -l)
+    echo -e "  ${GREEN}+${NC} Quadlet units: ${count} container files"
 fi
 
 # Check GitOps directory
@@ -105,9 +96,10 @@ if [ -d "$GITOPS_DIR" ]; then
 fi
 
 # Check daemon socket
-if [ -S "/run/hecate/daemon.sock" ]; then
+socket_path="${INSTALL_DIR}/hecate-daemon/sockets/api.sock"
+if [ -S "${socket_path}" ]; then
     FOUND_SOCKET=true
-    echo -e "  ${GREEN}+${NC} Daemon socket: /run/hecate/daemon.sock"
+    echo -e "  ${GREEN}+${NC} Daemon socket: ${socket_path}"
 fi
 
 # Check CLI wrapper
@@ -116,24 +108,13 @@ if [ -f "${BIN_DIR}/hecate" ]; then
     echo -e "  ${GREEN}+${NC} CLI wrapper: ${BIN_DIR}/hecate"
 fi
 
-# Check TUI binary
-if [ -f "${BIN_DIR}/hecate-tui" ]; then
-    FOUND_TUI=true
-    echo -e "  ${GREEN}+${NC} TUI binary: ${BIN_DIR}/hecate-tui"
+# Check hecate-web
+if [ -f "${BIN_DIR}/hecate-web" ]; then
+    FOUND_WEB=true
+    echo -e "  ${GREEN}+${NC} Desktop app: ${BIN_DIR}/hecate-web"
 fi
 
-# Check legacy Docker Compose installation
-if [ -f "${INSTALL_DIR}/docker-compose.yml" ]; then
-    FOUND_LEGACY_COMPOSE=true
-    echo -e "  ${YELLOW}!${NC} Legacy Docker Compose: ${INSTALL_DIR}/docker-compose.yml"
-fi
-
-if command_exists docker && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "hecate"; then
-    FOUND_LEGACY_CONTAINERS=true
-    echo -e "  ${YELLOW}!${NC} Legacy Docker containers found"
-fi
-
-# Check Ollama (inference node)
+# Check Ollama
 FOUND_OLLAMA=false
 if command_exists ollama || [ -d "${HOME}/.ollama" ]; then
     FOUND_OLLAMA=true
@@ -148,8 +129,9 @@ if command_exists ollama || [ -d "${HOME}/.ollama" ]; then
 fi
 
 # Check if anything found
-if [ "$FOUND_K3S" = false ] && [ "$FOUND_CLI" = false ] && [ "$FOUND_TUI" = false ] && \
-   [ "$FOUND_LEGACY_COMPOSE" = false ] && [ "$FOUND_GITOPS" = false ] && [ "$FOUND_OLLAMA" = false ]; then
+if [ "$FOUND_RECONCILER" = false ] && [ "$FOUND_DAEMON" = false ] && \
+   [ "$FOUND_CLI" = false ] && [ "$FOUND_WEB" = false ] && \
+   [ "$FOUND_GITOPS" = false ] && [ "$FOUND_OLLAMA" = false ]; then
     echo ""
     warn "No Hecate installation found"
     exit 0
@@ -162,85 +144,81 @@ if ! confirm "Uninstall Hecate?"; then
 fi
 
 # -----------------------------------------------------------------------------
-# Remove Legacy Docker Compose (if present)
+# Stop and Remove Services
 # -----------------------------------------------------------------------------
 
-if [ "$FOUND_LEGACY_CONTAINERS" = true ] || [ "$FOUND_LEGACY_COMPOSE" = true ]; then
-    section "Removing Legacy Docker Installation"
+section "Stopping Services"
 
-    if [ -f "${INSTALL_DIR}/docker-compose.yml" ]; then
-        info "Stopping Docker Compose services..."
-        cd "${INSTALL_DIR}"
-        docker compose down --remove-orphans 2>/dev/null || true
-        ok "Legacy containers stopped"
+# Stop all hecate systemd user services
+info "Stopping hecate services..."
+for unit in $(systemctl --user list-units 'hecate-*' --no-pager --plain --no-legend 2>/dev/null | awk '{print $1}'); do
+    info "Stopping ${unit}..."
+    systemctl --user stop "${unit}" 2>/dev/null || true
+done
+
+# Disable reconciler
+if [ "$FOUND_RECONCILER" = true ]; then
+    systemctl --user disable hecate-reconciler.service 2>/dev/null || true
+    ok "Reconciler disabled"
+fi
+
+ok "All hecate services stopped"
+
+# -----------------------------------------------------------------------------
+# Remove Quadlet Symlinks
+# -----------------------------------------------------------------------------
+
+section "Removing Quadlet Units"
+
+# Remove all hecate-* container files from Quadlet directory
+removed_quadlets=0
+for f in "${QUADLET_DIR}"/hecate-*.container; do
+    if [ -f "${f}" ] || [ -L "${f}" ]; then
+        rm -f "${f}"
+        removed_quadlets=$((removed_quadlets + 1))
     fi
+done
+
+if [ $removed_quadlets -gt 0 ]; then
+    ok "Removed ${removed_quadlets} Quadlet unit(s)"
+    systemctl --user daemon-reload 2>/dev/null || true
+else
+    info "No Quadlet units found"
+fi
+
+# Remove reconciler service file
+if [ -f "${SYSTEMD_USER_DIR}/hecate-reconciler.service" ]; then
+    rm -f "${SYSTEMD_USER_DIR}/hecate-reconciler.service"
+    systemctl --user daemon-reload 2>/dev/null || true
+    ok "Removed reconciler service file"
 fi
 
 # -----------------------------------------------------------------------------
-# Remove Hecate from Kubernetes
+# Remove Containers
 # -----------------------------------------------------------------------------
 
-if [ "$FOUND_HECATE_NS" = true ]; then
-    section "Removing Hecate from Cluster"
+section "Removing Containers"
 
-    info "Deleting hecate namespace and all resources..."
-    kubectl delete namespace hecate --timeout=60s 2>/dev/null || true
-    ok "Hecate namespace deleted"
-fi
+if command_exists podman; then
+    # Stop and remove hecate containers
+    for container in $(podman ps -a --format '{{.Names}}' 2>/dev/null | grep '^hecate-'); do
+        info "Removing container: ${container}"
+        podman rm -f "${container}" 2>/dev/null || true
+    done
 
-# -----------------------------------------------------------------------------
-# Remove FluxCD (Optional)
-# -----------------------------------------------------------------------------
-
-if [ "$FOUND_FLUX" = true ]; then
-    section "FluxCD"
-
-    echo "FluxCD provides GitOps deployment for the cluster."
+    # Remove hecate images (optional)
     echo ""
-
-    if confirm "Remove FluxCD from cluster?"; then
-        info "Uninstalling FluxCD..."
-        if command_exists flux; then
-            flux uninstall --namespace=flux-system --silent 2>/dev/null || true
-        fi
-        kubectl delete namespace flux-system --timeout=60s 2>/dev/null || true
-        ok "FluxCD removed"
+    if confirm "Remove hecate container images? (frees disk space)" "y"; then
+        for image in $(podman images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep 'hecate'); do
+            info "Removing image: ${image}"
+            podman rmi "${image}" 2>/dev/null || true
+        done
+        ok "Container images removed"
     else
-        warn "Keeping FluxCD"
+        warn "Keeping container images"
     fi
-fi
-
-# -----------------------------------------------------------------------------
-# Remove k3s (Optional)
-# -----------------------------------------------------------------------------
-
-if [ "$FOUND_K3S" = true ]; then
-    section "k3s Cluster"
-
-    echo "k3s is the Kubernetes distribution powering Hecate."
-    echo ""
-    echo -e "${YELLOW}${BOLD}Warning:${NC} This will remove the ENTIRE k3s cluster,"
-    echo "including any other workloads running on it."
-    echo ""
-
-    if confirm "Completely uninstall k3s?" "n"; then
-        info "Uninstalling k3s..."
-
-        # Use k3s uninstall scripts
-        if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
-            sudo /usr/local/bin/k3s-uninstall.sh
-            ok "k3s server uninstalled"
-        elif [ -f /usr/local/bin/k3s-agent-uninstall.sh ]; then
-            sudo /usr/local/bin/k3s-agent-uninstall.sh
-            ok "k3s agent uninstalled"
-        else
-            warn "k3s uninstall script not found"
-            echo "Try: sudo rm -rf /etc/rancher /var/lib/rancher"
-        fi
-    else
-        warn "Keeping k3s"
-        echo "The cluster remains available for other workloads."
-    fi
+else
+    info "podman not found, skipping container cleanup"
 fi
 
 # -----------------------------------------------------------------------------
@@ -249,36 +227,12 @@ fi
 
 section "Removing Binaries"
 
-if [ "$FOUND_CLI" = true ]; then
-    rm -f "${BIN_DIR}/hecate"
-    ok "Removed ${BIN_DIR}/hecate"
-fi
-
-if [ "$FOUND_TUI" = true ]; then
-    rm -f "${BIN_DIR}/hecate-tui"
-    ok "Removed ${BIN_DIR}/hecate-tui"
-fi
-
-# Remove flux CLI if it was installed by us
-if command_exists flux; then
-    if confirm "Remove FluxCD CLI binary?"; then
-        sudo rm -f /usr/local/bin/flux
-        ok "Removed /usr/local/bin/flux"
+for binary in hecate hecate-reconciler hecate-web; do
+    if [ -f "${BIN_DIR}/${binary}" ]; then
+        rm -f "${BIN_DIR}/${binary}"
+        ok "Removed ${BIN_DIR}/${binary}"
     fi
-fi
-
-# -----------------------------------------------------------------------------
-# Clean Socket Directory
-# -----------------------------------------------------------------------------
-
-if [ "$FOUND_SOCKET" = true ] || [ -d "/run/hecate" ]; then
-    section "Socket Directory"
-
-    if [ -d "/run/hecate" ]; then
-        sudo rm -rf /run/hecate
-        ok "Removed /run/hecate"
-    fi
-fi
+done
 
 # -----------------------------------------------------------------------------
 # Clean Shell Profiles
@@ -289,17 +243,14 @@ section "Shell Profiles"
 CLEANED_PROFILES=false
 for profile in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
     if [ -f "$profile" ]; then
-        # Check for Hecate entries (both old and new style)
-        if grep -qE "(# Hecate|KUBECONFIG.*hecate)" "$profile" 2>/dev/null; then
+        if grep -qE "(# Hecate)" "$profile" 2>/dev/null; then
             info "Cleaning $profile..."
 
             if [[ "$OSTYPE" == "darwin"* ]]; then
                 sed -i '' '/# Hecate/d' "$profile" 2>/dev/null || true
-                sed -i '' '/KUBECONFIG.*hecate/d' "$profile" 2>/dev/null || true
                 sed -i '' '/\.local\/bin.*hecate/d' "$profile" 2>/dev/null || true
             else
                 sed -i '/# Hecate/d' "$profile" 2>/dev/null || true
-                sed -i '/KUBECONFIG.*hecate/d' "$profile" 2>/dev/null || true
                 sed -i '/\.local\/bin.*hecate/d' "$profile" 2>/dev/null || true
             fi
 
@@ -324,11 +275,11 @@ if [ -d "${INSTALL_DIR}" ]; then
     ls -la "${INSTALL_DIR}" 2>/dev/null || true
     echo ""
 
-    if confirm "Delete ${INSTALL_DIR}? ${RED}(includes kubeconfig, gitops, and data)${NC}"; then
+    if confirm "Delete ${INSTALL_DIR}? ${RED}(includes gitops, secrets, and daemon data)${NC}"; then
         if rm -rf "${INSTALL_DIR}" 2>/dev/null; then
             ok "Removed ${INSTALL_DIR}"
         else
-            warn "Some files are owned by root"
+            warn "Some files could not be removed"
             info "Attempting removal with sudo..."
             if sudo rm -rf "${INSTALL_DIR}"; then
                 ok "Removed ${INSTALL_DIR}"
@@ -339,7 +290,7 @@ if [ -d "${INSTALL_DIR}" ]; then
         fi
     else
         warn "Kept ${INSTALL_DIR}"
-        echo "Contains: kubeconfig, gitops manifests, daemon data"
+        echo "Contains: gitops manifests, daemon data, secrets"
     fi
 fi
 
@@ -380,7 +331,7 @@ if command_exists ollama || [ -d "$OLLAMA_MODELS_DIR" ]; then
         pkill -f "ollama" 2>/dev/null || true
         sleep 1
 
-        # Find and remove Ollama binary (could be in different locations)
+        # Find and remove Ollama binary
         ollama_bin=""
         for path in /usr/local/bin/ollama /usr/bin/ollama; do
             if [ -f "$path" ]; then
@@ -457,9 +408,10 @@ section "Uninstall Complete"
 echo -e "${DIM}The goddess has departed. The crossroads await her return.${NC}"
 echo ""
 echo "Removed:"
-[ "$FOUND_HECATE_NS" = true ] && echo "  - Hecate Kubernetes namespace"
+[ "$FOUND_RECONCILER" = true ] && echo "  - Reconciler service"
+[ "$FOUND_DAEMON" = true ] && echo "  - Hecate daemon"
 [ "$FOUND_CLI" = true ] && echo "  - CLI wrapper (hecate)"
-[ "$FOUND_TUI" = true ] && echo "  - TUI binary (hecate-tui)"
+[ "$FOUND_WEB" = true ] && echo "  - Desktop app (hecate-web)"
 echo ""
 echo "To summon her again:"
 echo -e "  ${CYAN}curl -fsSL https://hecate.io/install.sh | bash${NC}"

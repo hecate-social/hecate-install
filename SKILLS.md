@@ -1,6 +1,6 @@
 # Hecate Skills
 
-Skills for interacting with the Hecate mesh network daemon. Used by Hecate TUI and compatible AI coding assistants.
+Skills for interacting with the Hecate mesh network daemon. Used by Hecate Web, the CLI, and compatible AI coding assistants.
 
 ## Overview
 
@@ -481,15 +481,13 @@ hecate llm chat       # Chat with a model
 
 ---
 
-## TUI
+## Desktop App
 
-The `hecate-tui` provides a visual interface:
+Hecate Web provides a graphical interface:
 
 ```bash
-hecate-tui            # Launch terminal UI
+hecate-web            # Launch desktop app
 ```
 
-Keyboard shortcuts:
-- `1-5` - Switch views (Status, Mesh, Capabilities, RPC, Logs)
-- `r` - Refresh current view
-- `q` - Quit
+The desktop app connects to the daemon via Unix socket and provides
+studio-based workflows for LLM interaction, node management, and more.

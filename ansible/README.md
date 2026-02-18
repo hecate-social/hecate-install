@@ -6,7 +6,7 @@ Deploy Hecate across multiple nodes with a single command.
 
 ```bash
 # 1. Install Ansible
-pip install ansible kubernetes
+pip install ansible
 
 # 2. Copy and customize inventory
 cp inventory.example.ini inventory.ini
@@ -19,11 +19,9 @@ ansible-playbook -i inventory.ini hecate.yml
 ## Inventory Structure
 
 ```ini
-[server]
-beam00.lab          # k3s control plane (exactly one)
-
-[agents]
-beam01.lab          # k3s workers (zero or more)
+[cluster]
+beam00.lab          # Hecate daemon nodes
+beam01.lab
 beam02.lab
 beam03.lab
 
@@ -36,10 +34,11 @@ host00.lab          # Ollama-only nodes (zero or more)
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `hecate_realm` | `io.macula` | Macula mesh realm |
-| `hecate_bootstrap` | `https://boot.macula.io:443` | Bootstrap server |
-| `ollama_host` | `http://localhost:11434` | Ollama URL for k3s nodes |
+| `hecate_bootstrap` | `boot.macula.io:4433` | Bootstrap server |
+| `ollama_host` | `http://localhost:11434` | Ollama URL |
 | `ollama_models` | `['llama3.2']` | Models to pull on inference nodes |
-| `hecate_image` | `ghcr.io/hecate-social/hecate-daemon:main` | Daemon image |
+| `hecate_image` | `ghcr.io/hecate-social/hecate-daemon:0.8.0` | Daemon image |
+| `erlang_cookie` | (generated) | BEAM cluster shared cookie |
 
 ## Usage Examples
 
@@ -48,14 +47,9 @@ host00.lab          # Ollama-only nodes (zero or more)
 ansible-playbook -i inventory.ini hecate.yml
 ```
 
-### Deploy only server
+### Deploy only cluster nodes
 ```bash
-ansible-playbook -i inventory.ini hecate.yml --tags server
-```
-
-### Deploy only agents
-```bash
-ansible-playbook -i inventory.ini hecate.yml --tags agents
+ansible-playbook -i inventory.ini hecate.yml --tags cluster
 ```
 
 ### Deploy only inference nodes
@@ -89,13 +83,16 @@ ansible-playbook -i inventory.ini hecate.yml --check
         ┌───────────────┼───────────────┬───────────────┐
         ▼               ▼               ▼               ▼
 ┌───────────┐   ┌───────────┐   ┌───────────┐   ┌───────────┐
-│  Server   │   │   Agent   │   │   Agent   │   │ Inference │
+│  Cluster  │   │  Cluster  │   │  Cluster  │   │ Inference │
 │  beam00   │◄──│  beam01   │   │  beam02   │   │  host00   │
 │           │   │           │   │           │   │           │
-│ k3s ctrl  │   │ k3s work  │   │ k3s work  │   │  Ollama   │
-│ FluxCD    │   │           │   │           │   │   only    │
-│ Hecate    │   │           │   │           │   │           │
+│ podman    │   │ podman    │   │ podman    │   │  Ollama   │
+│ daemon    │   │ daemon    │   │ daemon    │   │   only    │
+│ reconciler│   │ reconciler│   │ reconciler│   │           │
 └───────────┘   └───────────┘   └───────────┘   └───────────┘
+      ▲               ▲               ▲
+      └───────────────┴───────────────┘
+              BEAM Clustering (pg)
 ```
 
 ## Roles
@@ -103,28 +100,15 @@ ansible-playbook -i inventory.ini hecate.yml --check
 | Role | Description |
 |------|-------------|
 | `common` | Dependencies, firewall, directories |
-| `k3s-server` | k3s control plane, kubeconfig, join script |
-| `k3s-agent` | Join existing cluster as worker |
-| `flux` | FluxCD GitOps controller |
+| `hecate-node` | Podman, reconciler, daemon deployment |
 | `inference` | Ollama installation and configuration |
-| `hecate` | Daemon deployment to k8s |
 
 ## Firewall Ports
 
-### Server
-- `6443/tcp` - k3s API
-- `4433/udp` - Macula mesh
+### Cluster Nodes
+- `4433/udp` - Macula mesh (QUIC)
 - `4369/tcp` - EPMD (Erlang)
 - `9100/tcp` - Erlang distribution
-- `8472/udp` - Flannel VXLAN
-- `10250/tcp` - Kubelet
-
-### Agent
-- `4433/udp` - Macula mesh
-- `4369/tcp` - EPMD (Erlang)
-- `9100/tcp` - Erlang distribution
-- `8472/udp` - Flannel VXLAN
-- `10250/tcp` - Kubelet
 
 ### Inference
 - `11434/tcp` - Ollama API
@@ -137,17 +121,19 @@ ansible-playbook -i inventory.ini hecate.yml --check
 ansible -i inventory.ini all -m ping
 ```
 
-### k3s agent won't join
+### Daemon not starting
 ```bash
-# Check server firewall
-ansible -i inventory.ini server -a "ufw status"
+# Check service status
+ansible -i inventory.ini cluster -a "systemctl --user status hecate-daemon"
 
-# Check agent logs
-ansible -i inventory.ini agents -a "journalctl -u k3s-agent -n 20"
+# Check logs
+ansible -i inventory.ini cluster -a "journalctl --user -u hecate-daemon -n 20"
+
+# Check podman
+ansible -i inventory.ini cluster -a "podman ps -a"
 ```
 
-### View cluster status
+### View service status
 ```bash
-ansible -i inventory.ini server -a "kubectl get nodes"
-ansible -i inventory.ini server -a "kubectl get pods -A"
+ansible -i inventory.ini cluster -a "systemctl --user list-units 'hecate-*'"
 ```

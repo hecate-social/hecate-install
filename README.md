@@ -12,194 +12,162 @@
 ## Quick Install
 
 ```bash
-curl -fsSL https://macula.io/hecate/install.sh | bash
+curl -fsSL https://hecate.io/install.sh | bash
 ```
+
+## Architecture
+
+Hecate runs as **rootless Podman containers** managed by **systemd user services**:
+
+```
+~/.hecate/gitops/           ← Source of truth (Quadlet .container files)
+    ↓ reconciler watches
+~/.config/containers/systemd/  ← Podman Quadlet picks up symlinks
+    ↓ systemctl --user daemon-reload
+systemd user services          ← Containers run as user services
+```
+
+No Kubernetes. No root. No cluster overhead.
 
 ## Node Roles
 
-The installer lets you select one or more roles for your node:
-
-| Role | What It Adds | Use Case |
-|------|--------------|----------|
-| **Workstation** | TUI + Hecate Skills | Development and testing |
-| **Services** | Network-exposed API | Hosting capabilities |
-| **AI** | Ollama + models | Serving AI to network |
-
-**Roles can be combined!** For example, a powerful machine could be both an AI server AND a development workstation.
-
-### Interactive Selection
-
-```
-What will this node be used for?
-You can select multiple roles by entering numbers separated by spaces
-
-  1) Developer Workstation
-     TUI + Hecate Skills for writing agents
-
-  2) Services Host
-     Host capabilities on the mesh (API exposed to network)
-
-  3) AI Server
-     Run Ollama and serve AI models to the network
-
-  4) All of the above
-     Full stack: development + services + AI
-
-  Enter choices (e.g., 1 3 or 4):
-```
+| Role | What It Does | Use Case |
+|------|-------------|----------|
+| **Standalone** | Full stack on one machine | Laptop, desktop, single server |
+| **Cluster** | Joins BEAM cluster with peers | Multi-node home lab |
+| **Inference** | Ollama-only, no daemon | Dedicated GPU server |
 
 ### Example Configurations
 
-**Developer Workstation** - For writing and testing agents:
+**Standalone workstation** (default):
 ```bash
-curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=workstation
+curl -fsSL https://hecate.io/install.sh | bash
 ```
 
-**Services Node** - Headless server hosting capabilities:
+**Headless server** (no desktop app):
 ```bash
-curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=services
+curl -fsSL https://hecate.io/install.sh | bash -s -- --daemon-only
 ```
 
-**AI Server** - Dedicated AI model server:
+**Cluster node** (joins BEAM cluster):
 ```bash
-curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=ai
+curl -fsSL https://hecate.io/install.sh | bash
+# Select "Cluster" role, provide cookie and peer addresses
 ```
 
-**AI + Workstation** - Dev machine that also serves AI:
+**Inference node** (GPU server):
 ```bash
-curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=ai,workstation
-```
-
-**Services + AI** - Server that hosts capabilities AND serves AI:
-```bash
-curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=services,ai
-```
-
-**Full Stack** - Everything:
-```bash
-curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=full
-```
-
-## Installation Flow
-
-![Install Flow](assets/install-flow.svg)
-
-## Features
-
-### Intelligent Hardware Detection
-
-The installer automatically detects and displays:
-- **RAM** - Recommends appropriate model size
-- **CPU cores** - Suggests role based on capacity
-- **AVX2 support** - Optimizes inference performance
-- **GPU** - Enables acceleration (NVIDIA, AMD, Apple Silicon)
-- **Local IP** - For network configuration
-
-### AI Node Discovery
-
-When setting up a workstation, the installer:
-1. Scans your local network for existing AI nodes
-2. Tests connectivity to discovered servers
-3. Lists available models on the AI node
-4. Configures automatic connection
-
-### Clear Sudo Explanations
-
-When sudo is needed (Ollama install, systemd service), the installer:
-1. Explains exactly what needs sudo and why
-2. Shows the exact commands/files that will be created
-3. Asks for explicit confirmation before proceeding
-
-## Installation Options
-
-```bash
-# Interactive (recommended)
-curl -fsSL https://macula.io/hecate/install.sh | bash
-
-# Single role
-curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=workstation
-
-# Combined roles
-curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=ai,workstation
-curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --role=services,ai
-
-# Skip AI setup
-curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --no-ai
-
-# Non-interactive (CI/automation)
-curl -fsSL https://macula.io/hecate/install.sh | bash -s -- --headless --role=services
+curl -fsSL https://hecate.io/install.sh | bash
+# Select "Inference" role
 ```
 
 ## What Gets Installed
 
-Components are installed based on which roles you select:
+| Component | Standalone | Cluster | Inference |
+|-----------|:---------:|:-------:|:---------:|
+| Podman | yes | yes | - |
+| Hecate Daemon | yes | yes | - |
+| Reconciler | yes | yes | - |
+| Hecate Web | optional | optional | - |
+| Ollama | optional | optional | yes |
 
-| Component | Workstation | Services | AI | All |
-|-----------|:-----------:|:--------:|:--:|:---:|
-| Hecate Daemon | ✅ | ✅ | ✅ | ✅ |
-| Hecate TUI | ✅ | - | - | ✅ |
-| Hecate Skills | ✅ | - | - | ✅ |
-| Network API | - | ✅ | ✅ | ✅ |
-| Ollama | optional | - | ✅ | ✅ |
-| Systemd Service | - | ✅ | ✅ | - |
+## Installation Flow
 
-**Combined roles add up.** For example, `--role=ai,workstation` gets: TUI + Skills + Ollama + Network API.
+1. Detect hardware (RAM, CPU, GPU, storage)
+2. Select node role (standalone / cluster / inference)
+3. Select features (desktop app, Ollama)
+4. Install podman + enable user lingering
+5. Create `~/.hecate/` directory layout
+6. Seed gitops with Quadlet files from hecate-gitops
+7. Install reconciler (watches gitops, manages systemd units)
+8. Deploy hecate-daemon via Podman Quadlet
+9. Optionally install Hecate Web + Ollama
+10. Install CLI wrapper
 
 ## Installation Paths
 
 | Path | Contents |
 |------|----------|
-| `~/.local/bin/hecate` | Daemon binary |
-| `~/.local/bin/hecate-tui` | TUI binary |
-| `~/.hecate/` | Data directory |
-| `~/.hecate/config/hecate.toml` | Configuration |
-| `~/.hecate/SKILLS.md` | Hecate Skills |
+| `~/.hecate/` | Data root |
+| `~/.hecate/hecate-daemon/` | Daemon data (sqlite, sockets, etc.) |
+| `~/.hecate/gitops/system/` | Core Quadlet files (always present) |
+| `~/.hecate/gitops/apps/` | Plugin Quadlet files (installed on demand) |
+| `~/.hecate/config/` | Node-specific configuration |
+| `~/.hecate/secrets/` | LLM API keys, age keypair |
+| `~/.local/bin/hecate` | CLI wrapper |
+| `~/.local/bin/hecate-reconciler` | GitOps reconciler |
+| `~/.local/bin/hecate-web` | Desktop app (if installed) |
+| `~/.config/containers/systemd/` | Podman Quadlet units (symlinks) |
+| `~/.config/systemd/user/` | Reconciler systemd service |
 
-## Configuration
+## Managing Services
 
-The installer creates `~/.hecate/config/hecate.toml` with role-appropriate defaults:
+```bash
+# CLI wrapper
+hecate status                    # Show all hecate services
+hecate logs                      # View daemon logs
+hecate health                    # Check daemon health
+hecate start                     # Start daemon
+hecate stop                      # Stop daemon
+hecate restart                   # Restart daemon
+hecate update                    # Pull latest container images
+hecate reconcile                 # Manual reconciliation
 
-```toml
-# Role: workstation
-[daemon]
-api_port = 4444
-api_host = "127.0.0.1"  # "0.0.0.0" for services/AI nodes
+# Direct systemd
+systemctl --user list-units 'hecate-*'
+systemctl --user status hecate-daemon
+journalctl --user -u hecate-daemon -f
 
-[mesh]
-bootstrap = ["boot.macula.io:4433"]
-realm = "io.macula"
-
-[logging]
-level = "info"
-
-[ai]
-provider = "ollama"
-endpoint = "http://192.168.1.100:11434"  # Your AI node
-model = "deepseek-coder:6.7b"
+# Reconciler
+hecate-reconciler --status       # Show desired vs actual state
+hecate-reconciler --once         # One-shot reconciliation
 ```
+
+## Installing Plugins
+
+Plugins are Podman Quadlet `.container` files. To install a plugin:
+
+```bash
+# Copy plugin container files to gitops/apps/
+cp hecate-traderd.container ~/.hecate/gitops/apps/
+cp hecate-traderw.container ~/.hecate/gitops/apps/
+
+# The reconciler picks them up automatically
+# Or trigger manually:
+hecate reconcile
+```
+
+### Available Plugins
+
+| Plugin | Daemon | Frontend | Description |
+|--------|--------|----------|-------------|
+| Trader | `hecate-traderd` | `hecate-traderw` (:5174) | Trading agent |
+| Martha | `hecate-marthad` | `hecate-marthaw` (:5175) | AI agent |
 
 ## Network Setup Example
 
-A typical multi-node setup:
-
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Your Network                             │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐ │
-│   │   AI Node    │    │   Services   │    │  Workstation │ │
-│   │  (beam01)    │    │   (beam02)   │    │  (laptop)    │ │
-│   │              │    │              │    │              │ │
-│   │ Ollama:11434 │◄───│  daemon:4444 │    │ daemon:4444  │ │
-│   │ codellama:7b │    │  capabilities│    │ TUI + skills │ │
-│   │              │◄───│              │    │              │ │
-│   └──────────────┘    └──────────────┘    └──────┬───────┘ │
-│          ▲                                       │          │
-│          │                                       │          │
-│          └───────────────────────────────────────┘          │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                     Your Network                         │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│   ┌──────────────┐    ┌──────────────┐                  │
+│   │  Inference    │    │  Workstation │                  │
+│   │  (beam01)     │    │  (laptop)    │                  │
+│   │              │    │              │                  │
+│   │ Ollama:11434 │◄───│ daemon       │                  │
+│   │ llama3.2     │    │ hecate-web   │                  │
+│   │              │    │ ollama       │                  │
+│   └──────────────┘    └──────────────┘                  │
+│          ▲                                               │
+│          │          ┌──────────────┐                     │
+│          │          │  Cluster     │                     │
+│          └──────────│  (beam02)    │                     │
+│                     │ daemon       │                     │
+│                     │ plugins      │                     │
+│                     └──────────────┘                     │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ## Environment Variables
@@ -216,39 +184,49 @@ The installer only requires sudo for:
 
 | Component | Requires Sudo | Reason |
 |-----------|:-------------:|--------|
-| Ollama install | ✅ | Binary in `/usr/local/bin`, systemd service |
-| Systemd service | ✅ | Service file in `/etc/systemd/system/` |
-| Network config | ✅ | Ollama systemd override for `0.0.0.0` |
+| Podman install | yes | Package manager |
+| Ollama install | yes | Binary in `/usr/local/bin`, systemd service |
+| Firewall rules | yes | System firewall configuration |
+| User lingering | yes | `loginctl enable-linger` |
 
-The installer clearly explains each sudo requirement and asks for confirmation.
+All hecate services run as **user-level systemd services** — no root needed at runtime.
 
 ## Uninstall
 
 ```bash
-curl -fsSL https://macula.io/hecate/uninstall.sh | bash
+curl -fsSL https://hecate.io/uninstall.sh | bash
 ```
 
 Or manually:
 
 ```bash
-rm ~/.local/bin/hecate ~/.local/bin/hecate-tui
+# Stop services
+systemctl --user stop hecate-reconciler hecate-daemon
+
+# Remove Quadlet links
+rm ~/.config/containers/systemd/hecate-*.container
+systemctl --user daemon-reload
+
+# Remove binaries
+rm ~/.local/bin/hecate ~/.local/bin/hecate-reconciler ~/.local/bin/hecate-web
+
+# Remove data
 rm -rf ~/.hecate
-rm ~/.hecate/SKILLS.md
-sudo systemctl disable hecate 2>/dev/null
-sudo rm /etc/systemd/system/hecate.service 2>/dev/null
 ```
 
 ## Requirements
 
 - Linux (x86_64, arm64) or macOS (arm64, x86_64)
-- curl, tar
-- Terminal with 256 color support (for TUI)
+- curl, git
+- systemd (for service management)
+- For desktop app: webkit2gtk-4.1
 - For AI: 4GB+ RAM (8GB+ recommended)
 
 ## Components
 
 - [hecate-daemon](https://github.com/hecate-social/hecate-daemon) - Erlang mesh daemon
-- [hecate-tui](https://github.com/hecate-social/hecate-tui) - Go terminal UI
+- [hecate-web](https://github.com/hecate-social/hecate-web) - Tauri desktop app
+- [hecate-gitops](https://github.com/hecate-social/hecate-gitops) - Quadlet templates + reconciler
 
 ## License
 

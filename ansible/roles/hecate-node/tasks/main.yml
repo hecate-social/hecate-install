@@ -1,0 +1,100 @@
+---
+# Hecate Node role — installs podman, reconciler, daemon via Quadlet
+
+- name: Install podman
+  package:
+    name: podman
+    state: present
+
+- name: Enable user lingering
+  command: "loginctl enable-linger {{ ansible_user }}"
+  changed_when: false
+
+- name: Install inotify-tools
+  package:
+    name: inotify-tools
+    state: present
+
+- name: Clone hecate-gitops for Quadlet templates
+  git:
+    repo: https://github.com/hecate-social/hecate-gitops.git
+    dest: "/tmp/hecate-gitops"
+    depth: 1
+  become: false
+
+- name: Copy system Quadlet files
+  copy:
+    src: "/tmp/hecate-gitops/quadlet/system/"
+    dest: "/home/{{ ansible_user }}/.hecate/gitops/system/"
+    remote_src: yes
+    owner: "{{ ansible_user }}"
+  become: false
+
+- name: Install reconciler binary
+  copy:
+    src: "/tmp/hecate-gitops/reconciler/hecate-reconciler.sh"
+    dest: "/home/{{ ansible_user }}/.local/bin/hecate-reconciler"
+    remote_src: yes
+    owner: "{{ ansible_user }}"
+    mode: '0755'
+  become: false
+
+- name: Install reconciler systemd service
+  copy:
+    src: "/tmp/hecate-gitops/reconciler/hecate-reconciler.service"
+    dest: "/home/{{ ansible_user }}/.config/systemd/user/hecate-reconciler.service"
+    remote_src: yes
+    owner: "{{ ansible_user }}"
+  become: false
+
+- name: Update hardware config in daemon env
+  lineinfile:
+    path: "/home/{{ ansible_user }}/.hecate/gitops/system/hecate-daemon.env"
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+  loop:
+    - { key: "HECATE_RAM_GB", value: "{{ (ansible_memtotal_mb / 1024) | int }}" }
+    - { key: "HECATE_CPU_CORES", value: "{{ ansible_processor_vcpus }}" }
+  become: false
+
+- name: Configure BEAM cluster cookie
+  lineinfile:
+    path: "/home/{{ ansible_user }}/.hecate/gitops/system/hecate-daemon.env"
+    regexp: "^HECATE_ERLANG_COOKIE="
+    line: "HECATE_ERLANG_COOKIE={{ erlang_cookie }}"
+  when: erlang_cookie is defined
+  become: false
+
+- name: Configure cluster peers
+  lineinfile:
+    path: "/home/{{ ansible_user }}/.hecate/gitops/system/hecate-daemon.env"
+    regexp: "^HECATE_CLUSTER_PEERS="
+    line: "HECATE_CLUSTER_PEERS={{ groups['cluster'] | join(',') }}"
+  when: groups['cluster'] | length > 1
+  become: false
+
+- name: Reload systemd user daemon
+  systemd:
+    daemon_reload: yes
+    scope: user
+  become: false
+
+- name: Enable and start reconciler
+  systemd:
+    name: hecate-reconciler.service
+    enabled: yes
+    state: started
+    scope: user
+  become: false
+
+- name: Clean up temp gitops clone
+  file:
+    path: "/tmp/hecate-gitops"
+    state: absent
+  become: false
+
+- name: Wait for daemon socket
+  wait_for:
+    path: "/home/{{ ansible_user }}/.hecate/hecate-daemon/sockets/api.sock"
+    timeout: 120
+  become: false
