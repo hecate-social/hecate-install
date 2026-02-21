@@ -67,8 +67,8 @@
   services.openssh = {
     enable = true;
     settings = {
-      PasswordAuthentication = true;
-      PermitRootLogin = "prohibit-password";
+      PasswordAuthentication = lib.mkDefault true;
+      PermitRootLogin = lib.mkDefault "prohibit-password";
     };
   };
 
