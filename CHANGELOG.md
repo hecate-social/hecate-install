@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-21
+
+### Added
+
+- **NixOS flake for bootable USB/ISO/SD images** ("Macula on a Stick")
+  - `flake.nix` entry point with build targets for ISO, SD card, VM tests
+  - Node role configurations: standalone, cluster, inference, workstation
+  - Hardware profiles: beam-node (Celeron J4105), generic-x86, generic-arm64
+  - 12 composable NixOS modules:
+    - `hecate-directories` — tmpfiles rules for ~/.hecate/ tree
+    - `hecate-reconciler` — GitOps reconciler package + systemd user service
+    - `hecate-gitops` — Seeds Quadlet .container + .env on activation
+    - `hecate-firewall` — Role-aware firewall rules (mesh, EPMD, Ollama)
+    - `hecate-daemon` — OCI container via Quadlet
+    - `hecate-cli` — CLI binary package
+    - `hecate-ollama` — Wraps NixOS services.ollama
+    - `hecate-secrets` — LLM API key management
+    - `hecate-firstboot` — QR code + pairing wizard (runs once)
+    - `hecate-mesh` — Macula mesh configuration
+    - `hecate-web` — Desktop app (workstation only)
+    - `hecate-cluster` — BEAM clustering options (cookie, peers)
+  - NixOS VM integration tests: boot, plugin lifecycle, firstboot
+  - Firstboot wizard with responsive web UI + pairing code flow
+  - Pre-configured beam00-03 cluster node definitions in flake.nix
+
+### Build Commands
+
+- `nix build .#iso-standalone` — Bootable ISO (standalone role)
+- `nix build .#iso-cluster` — Bootable ISO (cluster role)
+- `nix build .#iso-inference` — Bootable ISO (inference role)
+- `nix flake check` — Run all VM integration tests
+
+### Unchanged
+
+- `install.sh` — Still works for existing Linux machines (any distro)
+- `uninstall.sh` — Unchanged
+- `ansible/` — Unchanged
+
 ## [0.2.0] - 2026-02-18
 
 ### Changed

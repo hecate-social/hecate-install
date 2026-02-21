@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hecate Node Setup</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --border: #2a2a3a;
+      --text: #e0e0e8;
+      --dim: #8888a0;
+      --accent: #7c6cf0;
+      --accent-dim: #5a4ec0;
+      --success: #4ade80;
+      --error: #f87171;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      max-width: 480px;
+      width: 100%;
+      padding: 2rem;
+    }
+
+    .logo {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .logo h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+
+    .logo p {
+      color: var(--dim);
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+    }
+
+    .pairing-code {
+      text-align: center;
+      margin: 1.5rem 0;
+    }
+
+    .pairing-code .code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 2.5rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      color: var(--accent);
+    }
+
+    .pairing-code .label {
+      color: var(--dim);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.5rem;
+    }
+
+    .hostname {
+      text-align: center;
+      color: var(--dim);
+      font-size: 0.875rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .hostname strong {
+      color: var(--text);
+    }
+
+    .input-group {
+      margin-bottom: 1rem;
+    }
+
+    .input-group label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+
+    .input-group input,
+    .input-group select {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-group input:focus,
+    .input-group select:focus {
+      border-color: var(--accent);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 0.75rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-dim);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .status {
+      text-align: center;
+      margin-top: 1rem;
+      font-size: 0.875rem;
+      min-height: 1.5rem;
+    }
+
+    .status.success { color: var(--success); }
+    .status.error { color: var(--error); }
+
+    .steps {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .steps h3 {
+      font-size: 0.75rem;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 1rem;
+    }
+
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      font-size: 0.875rem;
+    }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 50%;
+      background: var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <h1>HECATE</h1>
+      <p>Node Setup</p>
+    </div>
+
+    <div class="card">
+      <div class="pairing-code">
+        <div class="label">Pairing Code</div>
+        <div class="code" id="code">---</div>
+      </div>
+
+      <div class="hostname">
+        Node: <strong id="hostname">loading...</strong>
+      </div>
+
+      <div class="input-group">
+        <label for="role">Node Role</label>
+        <select id="role">
+          <option value="standalone">Standalone (full stack)</option>
+          <option value="cluster">Cluster (BEAM member)</option>
+          <option value="inference">Inference (Ollama only)</option>
+        </select>
+      </div>
+
+      <div class="input-group" id="code-input-group">
+        <label for="code-input">Enter Pairing Code to Confirm</label>
+        <input type="text" id="code-input" placeholder="XXX-YYY" maxlength="7"
+               autocomplete="off" autocapitalize="characters" spellcheck="false">
+      </div>
+
+      <button class="btn btn-primary" id="configure-btn" disabled>
+        Configure Node
+      </button>
+
+      <div class="status" id="status"></div>
+
+      <div class="steps">
+        <h3>How it works</h3>
+        <div class="step">
+          <div class="step-num">1</div>
+          <div>Note the pairing code shown above</div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div>Choose the node role for this machine</div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div>Enter the pairing code and click Configure</div>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div>The node will start its services automatically</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const codeEl = document.getElementById('code');
+    const hostnameEl = document.getElementById('hostname');
+    const codeInput = document.getElementById('code-input');
+    const configureBtn = document.getElementById('configure-btn');
+    const statusEl = document.getElementById('status');
+
+    // Fetch pairing code from API
+    fetch('/api/pairing-code')
+      .then(r => r.json())
+      .then(data => {
+        codeEl.textContent = data.code;
+        hostnameEl.textContent = data.hostname;
+      })
+      .catch(() => {
+        codeEl.textContent = 'ERR';
+        statusEl.textContent = 'Could not connect to node';
+        statusEl.className = 'status error';
+      });
+
+    // Enable button when code is entered
+    codeInput.addEventListener('input', () => {
+      const val = codeInput.value.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+      codeInput.value = val;
+      configureBtn.disabled = val.length < 7;
+    });
+
+    // Auto-insert dash after 3 characters
+    codeInput.addEventListener('keyup', (e) => {
+      const val = codeInput.value.replace(/-/g, '');
+      if (val.length >= 3 && !codeInput.value.includes('-')) {
+        codeInput.value = val.slice(0, 3) + '-' + val.slice(3);
+      }
+    });
+
+    // Configure button
+    configureBtn.addEventListener('click', async () => {
+      configureBtn.disabled = true;
+      statusEl.textContent = 'Configuring...';
+      statusEl.className = 'status';
+
+      try {
+        const role = document.getElementById('role').value;
+        const code = codeInput.value.toUpperCase();
+
+        const res = await fetch('/api/configure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, role })
+        });
+
+        if (res.ok) {
+          statusEl.textContent = 'Node configured! Services starting...';
+          statusEl.className = 'status success';
+          configureBtn.textContent = 'Configured';
+        } else {
+          const data = await res.json();
+          statusEl.textContent = data.error === 'invalid_code'
+            ? 'Invalid pairing code. Check and try again.'
+            : 'Configuration failed.';
+          statusEl.className = 'status error';
+          configureBtn.disabled = false;
+        }
+      } catch (err) {
+        statusEl.textContent = 'Connection error. Is the node running?';
+        statusEl.className = 'status error';
+        configureBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

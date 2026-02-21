@@ -15,3 +15,8 @@ Thumbs.db
 
 # Local inventory
 ansible/inventory.ini
+
+# Nix
+result
+result-*
+.direnv/

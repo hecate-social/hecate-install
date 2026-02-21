@@ -4,15 +4,98 @@
   <p><em>One-command installer for the complete Hecate stack with intelligent hardware detection and role-based setup.</em></p>
 
   [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/rgfaber)
-  [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+  [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 </div>
 
 ---
 
-## Quick Install
+## Two Ways to Deploy
+
+| Method | Use Case | How |
+|--------|----------|-----|
+| **NixOS Flake** | Bootable USB/ISO/SD card | `nix build .#iso-standalone` |
+| **install.sh** | Existing Linux machine | `curl -fsSL https://hecate.io/install.sh \| bash` |
+
+Both produce the same result: podman + reconciler + gitops + hecate-daemon.
+
+## Quick Install (Existing Machine)
 
 ```bash
 curl -fsSL https://hecate.io/install.sh | bash
+```
+
+## NixOS Flake (Bootable Media)
+
+Build a bootable USB/ISO image:
+
+```bash
+# Standalone (full stack)
+nix build .#iso-standalone
+sudo dd if=result/iso/nixos-*.iso of=/dev/sdX bs=4M status=progress
+
+# Cluster member
+nix build .#iso-cluster
+
+# Inference (Ollama only)
+nix build .#iso-inference
+
+# Run VM integration tests
+nix flake check
+
+# Interactive VM testing
+nix run .#checks.x86_64-linux.boot-test.driverInteractive
+```
+
+### NixOS Configuration
+
+For permanent installations, reference the flake in your NixOS config:
+
+```nix
+# /etc/nixos/flake.nix
+{
+  inputs.hecate-node.url = "github:hecate-social/hecate-node";
+  outputs = { self, nixpkgs, hecate-node }: {
+    nixosConfigurations.mynode = nixpkgs.lib.nixosSystem {
+      modules = [
+        hecate-node.nixosConfigurations.standalone.config
+        ./hardware-configuration.nix
+        {
+          networking.hostName = "my-hecate-node";
+          services.hecate.daemon.version = "0.8.1";
+          services.hecate.ollama.models = [ "llama3.2" "deepseek-r1" ];
+        }
+      ];
+    };
+  };
+}
+```
+
+### Flake Structure
+
+```
+flake.nix                       # Entry point + build targets
+configurations/
+  base.nix                      # Common: podman, mDNS, firewall, user
+  standalone.nix                # Base + daemon + Ollama
+  cluster.nix                   # Base + daemon + BEAM clustering
+  inference.nix                 # Ollama only (no daemon)
+  workstation.nix               # Standalone + desktop app
+modules/                        # Composable NixOS modules
+  hecate-{directories,reconciler,gitops,firewall,...}.nix
+hardware/                       # Hardware-specific profiles
+  beam-node.nix                 # Celeron J4105 (beam00-03)
+  generic-x86.nix               # Any x86_64
+  generic-arm64.nix             # RPi4 / ARM64
+packages/                       # Nix derivations
+  hecate-reconciler.nix         # Reconciler bash script
+  hecate-cli.nix                # CLI binary
+tests/                          # NixOS VM integration tests
+  boot-test.nix                 # Boot + reconciler starts
+  plugin-test.nix               # Drop .container -> service starts
+  firstboot-test.nix            # Firstboot wizard flow
+firstboot/                      # Firstboot wizard assets
+  firstboot.sh                  # Pairing flow script
+  index.html                    # Responsive pairing web UI
 ```
 
 ## Architecture
@@ -230,7 +313,7 @@ rm -rf ~/.hecate
 
 ## License
 
-Apache 2.0 - See [LICENSE](LICENSE)
+MIT - See [LICENSE](LICENSE)
 
 ## Support
 
