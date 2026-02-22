@@ -752,6 +752,7 @@ ContainerName=hecate-daemon
 AutoUpdate=registry
 Network=host
 Volume=%h/.hecate/hecate-daemon:/data:Z
+Volume=%h/.hecate/config:%h/.hecate/config:Z
 EnvironmentFile=%h/.hecate/gitops/system/hecate-daemon.env
 
 # Health check: daemon socket presence
@@ -838,6 +839,110 @@ update_hardware_config() {
     if [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
         ok "Remote Ollama: ${OLLAMA_HOST}"
     fi
+}
+
+# -----------------------------------------------------------------------------
+# Bundled Plugin Containers
+# -----------------------------------------------------------------------------
+
+seed_bundled_plugins() {
+    section "Seeding Bundled Plugin Containers"
+
+    local plugins=(
+        "hecate-app-settingsd:ghcr.io/hecate-social/hecate-app-settingsd:0.1.0:Hecate Settings Plugin"
+        "hecate-app-appstored:ghcr.io/hecate-social/hecate-app-appstored:0.1.0:Hecate App Store Plugin"
+        "hecate-app-marthad:ghcr.io/hecate-social/hecate-app-marthad:0.1.0:Hecate Martha AI Agent Plugin"
+        "hecate-app-maculad:ghcr.io/hecate-social/hecate-app-maculad:0.1.0:Hecate Macula Mesh Plugin"
+        "hecate-app-snake-dueld:ghcr.io/hecate-social/hecate-app-snake-dueld:0.1.0:Hecate Snake Duel Plugin"
+    )
+
+    for entry in "${plugins[@]}"; do
+        IFS=':' read -r name image version description <<< "${entry}"
+        local container_file="${GITOPS_DIR}/apps/${name}.container"
+
+        if [ -f "${container_file}" ]; then
+            info "Skipping ${name} (already exists)"
+            continue
+        fi
+
+        cat > "${container_file}" << PLUGINEOF
+[Unit]
+Description=${description}
+After=hecate-daemon.service
+Wants=hecate-daemon.service
+
+[Container]
+Image=${image}:${version}
+ContainerName=${name}
+AutoUpdate=registry
+Network=host
+
+# HOME=%h so convention paths (~/.hecate/...) resolve to real user home
+Environment=HOME=%h
+
+# Volume mounts — convention paths identical inside/outside
+Volume=%h/.hecate/${name}:%h/.hecate/${name}:Z
+Volume=%h/.hecate/hecate-daemon/sockets:%h/.hecate/hecate-daemon/sockets:ro
+Volume=%h/.hecate/secrets:%h/.hecate/secrets:ro
+
+# Health check via convention path
+HealthCmd=test -S %h/.hecate/${name}/sockets/api.sock
+HealthInterval=30s
+HealthRetries=3
+HealthTimeout=5s
+HealthStartPeriod=10s
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=60s
+
+[Install]
+WantedBy=default.target
+PLUGINEOF
+
+        ok "Created ${name}.container"
+    done
+}
+
+# -----------------------------------------------------------------------------
+# Default Sidebar Configuration
+# -----------------------------------------------------------------------------
+
+seed_sidebar_config() {
+    local config_file="${INSTALL_DIR}/config/sidebar.yaml"
+
+    if [ -f "${config_file}" ]; then
+        info "Sidebar config already exists, skipping"
+        return
+    fi
+
+    section "Seeding Default Sidebar Configuration"
+
+    cat > "${config_file}" << 'SIDEBAREOF'
+# Sidebar group configuration for hecate-web
+# Groups organize plugins in the sidebar. Plugins not in any group appear under "Ungrouped".
+groups:
+  - name: "SYSTEM"
+    icon: "\u2699\uFE0F"
+    collapsed: false
+    apps:
+      - settings
+      - appstore
+  - name: "DEVELOP"
+    icon: "\uD83D\uDEE0\uFE0F"
+    collapsed: false
+    apps:
+      - martha
+      - macula
+  - name: "ARCADE"
+    icon: "\uD83C\uDFAE"
+    collapsed: false
+    apps:
+      - snake-duel
+SIDEBAREOF
+
+    ok "Created default sidebar config"
 }
 
 # -----------------------------------------------------------------------------
@@ -1604,6 +1709,8 @@ main() {
     ensure_podman
     create_directory_layout
     seed_gitops
+    seed_bundled_plugins
+    seed_sidebar_config
     install_reconciler
     deploy_hecate
     setup_ollama
