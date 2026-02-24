@@ -851,7 +851,7 @@ seed_bundled_plugins() {
     local plugins=(
         "hecate-app-settingsd:ghcr.io/hecate-social/hecate-app-settingsd:0.1.0:Hecate Settings Plugin"
         "hecate-app-appstored:ghcr.io/hecate-social/hecate-app-appstored:0.1.0:Hecate App Store Plugin"
-        "hecate-app-marthad:ghcr.io/hecate-social/hecate-app-marthad:0.1.0:Hecate Martha AI Agent Plugin"
+        "hecate-app-marthad:ghcr.io/hecate-social/hecate-marthad:0.1.0:Hecate Martha AI Agent Plugin"
         "hecate-app-maculad:ghcr.io/hecate-social/hecate-app-maculad:0.1.0:Hecate Macula Mesh Plugin"
         "hecate-app-snake-dueld:ghcr.io/hecate-social/hecate-app-snake-dueld:0.1.0:Hecate Snake Duel Plugin"
     )
