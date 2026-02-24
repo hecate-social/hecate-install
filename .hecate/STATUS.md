@@ -59,8 +59,8 @@
 
 **Verified against actual implementations:**
 - `hecate-daemon/apps/hecate_api/src/hecate_api_app.erl` - actual API routes
-- `hecate-node/install.sh` - CLI wrapper
-- `hecate-node/SKILLS.md` - documentation
+- `hecate-install/install.sh` - CLI wrapper
+- `hecate-install/SKILLS.md` - documentation
 - `hecate-tui/internal/client/client.go` - TUI API calls
 - `macula-realm/router.ex` - pairing routes
 

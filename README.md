@@ -46,7 +46,7 @@ For permanent installations, reference the flake in your NixOS config:
 ```nix
 # /etc/nixos/flake.nix
 {
-  inputs.hecate-node.url = "github:hecate-social/hecate-node";
+  inputs.hecate-node.url = "github:hecate-social/hecate-install";
   outputs = { self, nixpkgs, hecate-node }: {
     nixosConfigurations.mynode = nixpkgs.lib.nixosSystem {
       modules = [
@@ -310,5 +310,5 @@ MIT - See [LICENSE](LICENSE)
 
 ## Support
 
-- [Issues](https://github.com/hecate-social/hecate-node/issues)
+- [Issues](https://github.com/hecate-social/hecate-install/issues)
 - [Buy Me a Coffee](https://buymeacoffee.com/rgfaber)

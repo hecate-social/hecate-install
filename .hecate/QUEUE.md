@@ -13,7 +13,7 @@ This is the **[node]** channel. When writing to RESPONSES.md:
 - Cross-references: `Related: Fixed bug in [daemon]`
 
 **All channels:**
-- `[node]` — hecate-node (this repo)
+- `[node]` — hecate-install (this repo)
 - `[daemon]` — hecate-daemon
 - `[tui]` — hecate-tui
 - `[realm]` — hecate-realm

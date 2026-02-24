@@ -25,7 +25,7 @@
 
   <!-- Title -->
   <text x="450" y="40" text-anchor="middle" fill="#e94560" font-family="monospace" font-size="20" font-weight="bold">🔥🗝️🔥 Hecate Node Install Flow</text>
-  <text x="450" y="65" text-anchor="middle" fill="#888" font-family="monospace" font-size="12">curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-node/main/install.sh | bash</text>
+  <text x="450" y="65" text-anchor="middle" fill="#888" font-family="monospace" font-size="12">curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh | bash</text>
 
   <!-- Step 1: Hardware Detection -->
   <rect x="50" y="90" width="280" height="80" rx="8" fill="url(#stepGrad)" stroke="#f39c12" stroke-width="2"/>

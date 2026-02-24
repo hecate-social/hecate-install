@@ -63,7 +63,7 @@ Fixed two bugs in `macula-io/macula-realm` that were blocking the pairing flow:
 
 ### Commits
 
-**hecate-node:**
+**hecate-install:**
 - `fix: Remove jq dependency, auto-configure PATH`
 - `fix: Handle unset ZSH_VERSION in bash strict mode`
 
@@ -89,7 +89,7 @@ Fixed two bugs in `macula-io/macula-realm` that were blocking the pairing flow:
 
 Verified actual implementations against documentation across:
 - `hecate-daemon` (Erlang API)
-- `hecate-node` (installer, CLI wrapper, SKILLS.md)
+- `hecate-install` (installer, CLI wrapper, SKILLS.md)
 - `hecate-tui` (Go TUI)
 - `macula-realm` (pairing backend)
 
@@ -341,7 +341,7 @@ All tasks from cross-repo verification are complete:
 | Repo | Sync Status |
 |------|-------------|
 | hecate-daemon | 🟢 Source of truth (hecate_api_app.erl) |
-| hecate-node | 🟢 SKILLS.md matches daemon |
+| hecate-install | 🟢 SKILLS.md matches daemon |
 | hecate-tui | 🟢 client.go matches daemon |
 | macula-realm | 🟢 Router complete |
 
