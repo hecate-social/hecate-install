@@ -535,14 +535,14 @@ select_feature_roles() {
 
     echo ""
 
-    # Ask about Ollama (local LLM inference — commercial providers work regardless)
+    # Ask about Ollama (local LLM inference — cloud providers work regardless)
     echo "Ollama (local LLM models):"
-    echo -e "  ${DIM}Commercial providers (Anthropic, OpenAI, Google) work without Ollama.${NC}"
+    echo -e "  ${DIM}Cloud providers (Anthropic, Google, etc.) work without Ollama.${NC}"
     echo -e "  ${DIM}Ollama adds free, local models that run on your hardware.${NC}"
     echo ""
     echo -e "  ${BOLD}1)${NC} Local          ${DIM}- Install Ollama on this machine${NC}"
     echo -e "  ${BOLD}2)${NC} Remote         ${DIM}- Use Ollama on another server${NC}"
-    echo -e "  ${BOLD}3)${NC} Skip           ${DIM}- No local models (commercial providers still work)${NC}"
+    echo -e "  ${BOLD}3)${NC} Skip           ${DIM}- No local models (cloud providers still work)${NC}"
     echo ""
     echo -en "  Enter choice [1]: " > /dev/tty
     read -r ollama_choice < /dev/tty
@@ -576,7 +576,7 @@ select_feature_roles() {
             ;;
         3|*)
             ROLE_AI=false
-            info "Skipping Ollama — commercial LLM providers still available"
+            info "Skipping Ollama — cloud LLM providers still available"
             ;;
     esac
 
@@ -1712,7 +1712,7 @@ review_choices() {
                 if [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
                     echo -e "     ${DIM}Use models on a remote Ollama server${NC}"
                 else
-                    echo -e "     ${DIM}Commercial providers (Anthropic, OpenAI, Google) still work via API keys${NC}"
+                    echo -e "     ${DIM}Cloud providers (Anthropic, Google, etc.) still work via API keys${NC}"
                 fi
                 ;;
         esac
@@ -1788,12 +1788,12 @@ toggle_workstation() {
 select_ollama() {
     echo ""
     echo "Ollama (local LLM models):"
-    echo -e "  ${DIM}Commercial providers (Anthropic, OpenAI, Google) work without Ollama.${NC}"
+    echo -e "  ${DIM}Cloud providers (Anthropic, Google, etc.) work without Ollama.${NC}"
     echo -e "  ${DIM}Ollama adds free, local models that run on your hardware.${NC}"
     echo ""
     echo -e "  ${BOLD}1)${NC} Local          ${DIM}- Install Ollama on this machine${NC}"
     echo -e "  ${BOLD}2)${NC} Remote         ${DIM}- Use Ollama on another server${NC}"
-    echo -e "  ${BOLD}3)${NC} Skip           ${DIM}- No local models (commercial providers still work)${NC}"
+    echo -e "  ${BOLD}3)${NC} Skip           ${DIM}- No local models (cloud providers still work)${NC}"
     echo ""
     echo -en "  Enter choice [1]: " > /dev/tty
     read -r ollama_choice < /dev/tty
@@ -1827,7 +1827,7 @@ select_ollama() {
         3|*)
             ROLE_AI=false
             OLLAMA_HOST="http://localhost:11434"
-            info "Skipping Ollama — commercial LLM providers still available"
+            info "Skipping Ollama — cloud LLM providers still available"
             ;;
     esac
 }
