@@ -1685,6 +1685,154 @@ show_summary() {
 }
 
 # -----------------------------------------------------------------------------
+# Review Choices (verify before commit)
+# -----------------------------------------------------------------------------
+
+review_choices() {
+    while true; do
+        section "Review Your Choices"
+
+        echo -e "  ${BOLD}1) Node role:${NC}       ${CYAN}${NODE_ROLE}${NC}"
+        case "$NODE_ROLE" in
+            standalone) echo -e "     ${DIM}Single machine — daemon runs locally, mesh for WAN discovery${NC}" ;;
+            cluster)    echo -e "     ${DIM}BEAM cluster member — shares state with peer nodes${NC}"
+                        echo -e "     ${DIM}Cookie: ${CLUSTER_COOKIE}${NC}"
+                        [ -n "$CLUSTER_PEERS" ] && echo -e "     ${DIM}Peers: ${CLUSTER_PEERS}${NC}" ;;
+        esac
+        echo ""
+
+        echo -e "  ${BOLD}2) Desktop app:${NC}     $([ "$ROLE_WORKSTATION" = true ] && echo "${GREEN}Yes${NC} — install hecate-web (Tauri)" || echo "${YELLOW}No${NC} — headless/server only")"
+        echo -e "     ${DIM}Provides the graphical UI for managing your node${NC}"
+        echo ""
+
+        echo -e "  ${BOLD}3) Ollama:${NC}          $(ollama_choice_label)"
+        case "$ROLE_AI" in
+            true) echo -e "     ${DIM}Local LLM inference — models run on your hardware (free, private)${NC}" ;;
+            *)
+                if [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
+                    echo -e "     ${DIM}Use models on a remote Ollama server${NC}"
+                else
+                    echo -e "     ${DIM}Commercial providers (Anthropic, OpenAI, Google) still work via API keys${NC}"
+                fi
+                ;;
+        esac
+        echo ""
+
+        echo -e "  ${BOLD}Hardware detected:${NC}"
+        echo -e "     ${DIM}${DETECTED_RAM_GB} GB RAM, ${DETECTED_CPU_CORES} cores, GPU: ${DETECTED_GPU_TYPE:-none}, ${DETECTED_STORAGE_GB} GB free${NC}"
+        echo ""
+
+        echo -e "  ${BOLD}Will install:${NC}"
+        echo -e "     podman, hecate-daemon (${HECATE_IMAGE##*:}), hecate-reconciler, hecate CLI"
+        [ "$ROLE_WORKSTATION" = true ] && echo -e "     hecate-web (desktop app)"
+        [ "$ROLE_AI" = true ] && echo -e "     Ollama (local)"
+        echo -e "     Firewall rules (${DIM}optional — will ask before any changes${NC})"
+        echo ""
+
+        if [ "$HEADLESS" = true ]; then
+            return
+        fi
+
+        echo -e "  Enter ${BOLD}1${NC}, ${BOLD}2${NC}, or ${BOLD}3${NC} to change a choice, ${BOLD}Enter${NC} to install, ${BOLD}q${NC} to quit."
+        echo -en "  > " > /dev/tty
+        read -r review_choice < /dev/tty
+
+        case "$review_choice" in
+            1)
+                select_node_role
+                # If user switched to inference, restart with that flow
+                if [ "$NODE_ROLE" = "inference" ]; then
+                    run_inference_install
+                    exit 0
+                fi
+                ;;
+            2) toggle_workstation ;;
+            3) select_ollama ;;
+            q|Q)
+                echo "Installation cancelled."
+                exit 0
+                ;;
+            "")
+                echo ""
+                if confirm "Start installation?" "y"; then
+                    return
+                fi
+                ;;
+            *)
+                warn "Enter 1, 2, 3, or press Enter to continue"
+                ;;
+        esac
+    done
+}
+
+ollama_choice_label() {
+    if [ "$ROLE_AI" = true ]; then
+        echo -e "${GREEN}Local${NC} — install Ollama on this machine"
+    elif [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
+        echo -e "${CYAN}Remote${NC} — ${OLLAMA_HOST}"
+    else
+        echo -e "${YELLOW}Skip${NC} — no local models"
+    fi
+}
+
+toggle_workstation() {
+    if [ "$ROLE_WORKSTATION" = true ]; then
+        ROLE_WORKSTATION=false
+        ok "Desktop app: disabled"
+    else
+        ROLE_WORKSTATION=true
+        ok "Desktop app: enabled"
+    fi
+}
+
+select_ollama() {
+    echo ""
+    echo "Ollama (local LLM models):"
+    echo -e "  ${DIM}Commercial providers (Anthropic, OpenAI, Google) work without Ollama.${NC}"
+    echo -e "  ${DIM}Ollama adds free, local models that run on your hardware.${NC}"
+    echo ""
+    echo -e "  ${BOLD}1)${NC} Local          ${DIM}- Install Ollama on this machine${NC}"
+    echo -e "  ${BOLD}2)${NC} Remote         ${DIM}- Use Ollama on another server${NC}"
+    echo -e "  ${BOLD}3)${NC} Skip           ${DIM}- No local models (commercial providers still work)${NC}"
+    echo ""
+    echo -en "  Enter choice [1]: " > /dev/tty
+    read -r ollama_choice < /dev/tty
+    ollama_choice="${ollama_choice:-1}"
+
+    case "$ollama_choice" in
+        1)
+            ROLE_AI=true
+            OLLAMA_HOST="http://localhost:11434"
+            ok "Will install Ollama locally"
+            ;;
+        2)
+            echo ""
+            echo -en "  Ollama URL (e.g., 192.168.1.50 or host00.lab:11434): " > /dev/tty
+            read -r ollama_host < /dev/tty
+            if [ -n "$ollama_host" ]; then
+                if [[ ! "$ollama_host" =~ ^https?:// ]]; then
+                    ollama_host="http://${ollama_host}"
+                fi
+                if [[ ! "$ollama_host" =~ :[0-9]+$ ]]; then
+                    ollama_host="${ollama_host}:11434"
+                fi
+                OLLAMA_HOST="$ollama_host"
+                ROLE_AI=false
+                ok "Using remote Ollama: ${OLLAMA_HOST}"
+            else
+                warn "No URL provided, skipping Ollama"
+                ROLE_AI=false
+            fi
+            ;;
+        3|*)
+            ROLE_AI=false
+            OLLAMA_HOST="http://localhost:11434"
+            info "Skipping Ollama — commercial LLM providers still available"
+            ;;
+    esac
+}
+
+# -----------------------------------------------------------------------------
 # Help
 # -----------------------------------------------------------------------------
 
@@ -1724,25 +1872,7 @@ main() {
     fi
 
     select_feature_roles
-
-    echo ""
-    echo "This installer will set up:"
-    echo "  - podman (rootless containers)"
-    echo "  - hecate-reconciler (GitOps watcher)"
-    echo "  - hecate-daemon (Podman Quadlet)"
-    [ "$ROLE_WORKSTATION" = true ] && echo "  - hecate-web (desktop app)"
-    if [ "$ROLE_AI" = true ]; then
-        echo "  - Ollama (local)"
-    elif [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
-        echo "  - Ollama (remote: ${OLLAMA_HOST})"
-    fi
-    echo "  - Firewall rules (optional — will ask before changing anything)"
-    echo ""
-
-    if ! confirm "Continue with installation?" "y"; then
-        echo "Installation cancelled."
-        exit 0
-    fi
+    review_choices
 
     configure_firewall
     ensure_podman
