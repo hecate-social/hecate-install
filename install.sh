@@ -241,7 +241,20 @@ detect_hardware() {
 configure_firewall() {
     section "Firewall Configuration"
 
-    # Detect active firewall
+    echo "Hecate uses these network ports:"
+    echo ""
+    show_required_ports
+    echo ""
+    echo -e "${DIM}If your firewall blocks these ports, Hecate's mesh networking won't work.${NC}"
+    echo -e "${DIM}You can configure this manually later if you prefer.${NC}"
+    echo ""
+
+    if ! confirm "Check and configure firewall now? (requires sudo)" "n"; then
+        info "Skipping firewall — configure manually if needed"
+        return
+    fi
+
+    # Now that user consented to sudo, detect active firewall
     local fw_tool=""
     local fw_active=false
 
@@ -290,31 +303,21 @@ configure_firewall() {
 
     # No firewall found
     if [ -z "$fw_tool" ]; then
-        ok "No firewall detected - all ports open by default"
-        echo ""
-        echo "For reference, these ports will be used:"
-        show_required_ports
+        ok "No firewall detected — ports are open by default"
         return
     fi
 
-    # Show firewall status
+    # Show what we found
     if [ "$fw_active" = false ]; then
-        info "Firewall (${fw_tool}) installed but not active"
-    else
-        info "Active firewall: ${fw_tool}"
-    fi
-    echo ""
-    show_required_ports
-    echo ""
-
-    # Offer to configure even if inactive
-    local prompt="Configure firewall rules?"
-    if [ "$fw_active" = false ]; then
-        prompt="Add firewall rules? (will apply when ${fw_tool} is enabled)"
+        info "Firewall (${fw_tool}) installed but inactive — no changes needed"
+        return
     fi
 
-    if ! confirm "$prompt" "y"; then
-        warn "Skipping firewall configuration"
+    info "Active firewall: ${fw_tool}"
+    echo ""
+
+    if ! confirm "Open the ports listed above in ${fw_tool}?" "y"; then
+        warn "Skipping firewall rules"
         return
     fi
 
@@ -1733,7 +1736,7 @@ main() {
     elif [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
         echo "  - Ollama (remote: ${OLLAMA_HOST})"
     fi
-    echo "  - Firewall rules"
+    echo "  - Firewall rules (optional — will ask before changing anything)"
     echo ""
 
     if ! confirm "Continue with installation?" "y"; then
