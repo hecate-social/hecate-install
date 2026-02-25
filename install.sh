@@ -1473,14 +1473,16 @@ install_web() {
         return
     }
 
+    # Determine download URL based on format
+    local deb_arch="amd64"
+    [ "$arch" = "arm64" ] && deb_arch="arm64"
+    local deb_url="${REPO_BASE}/hecate-web/releases/download/${version}/Hecate_${ver_num}_${deb_arch}.deb"
+
     if command_exists dpkg; then
-        # Debian/Ubuntu/Arch — install .deb
-        local deb_arch="amd64"
-        [ "$arch" = "arm64" ] && deb_arch="arm64"
-        local url="${REPO_BASE}/hecate-web/releases/download/${version}/Hecate_${ver_num}_${deb_arch}.deb"
+        # Debian/Ubuntu — install .deb natively
         local tmpfile
         tmpfile=$(mktemp --suffix=.deb)
-        download_file "$url" "$tmpfile"
+        download_file "$deb_url" "$tmpfile"
         sudo dpkg -i "$tmpfile" || sudo apt-get install -f -y
         rm -f "$tmpfile"
         ok "Hecate Web ${version} installed via .deb"
@@ -1495,9 +1497,27 @@ install_web() {
         sudo rpm -U "$tmpfile" || sudo dnf install -y "$tmpfile" 2>/dev/null || true
         rm -f "$tmpfile"
         ok "Hecate Web ${version} installed via .rpm"
+    elif command_exists pacman; then
+        # Arch/Manjaro — extract .deb manually (no dpkg needed)
+        local tmpfile tmpdir
+        tmpfile=$(mktemp --suffix=.deb)
+        tmpdir=$(mktemp -d)
+        download_file "$deb_url" "$tmpfile"
+        cd "${tmpdir}"
+        ar x "${tmpfile}" 2>/dev/null
+        tar xf data.tar.* 2>/dev/null
+        if [ -d "usr" ]; then
+            sudo cp -r usr/* /usr/
+            ok "Hecate Web ${version} installed (extracted from .deb)"
+        else
+            warn "Could not extract .deb package"
+            echo "  Download from: ${REPO_BASE}/hecate-web/releases/latest"
+        fi
+        cd - > /dev/null
+        rm -rf "${tmpfile}" "${tmpdir}"
     else
-        # Fallback — tell user to download manually
-        warn "No supported package manager (dpkg/rpm) found"
+        # Fallback
+        warn "No supported package manager found"
         echo "  Download from: ${REPO_BASE}/hecate-web/releases/latest"
     fi
 }
@@ -1620,8 +1640,62 @@ show_summary() {
         echo ""
     fi
 
-    echo -e "${DIM}To install plugins:${NC}"
-    echo -e "  Use the Appstore in hecate-web, or: hecate install <plugin>"
+    # --- What to do next ---
+    echo -e "${BOLD}What to do next:${NC}"
+    echo ""
+
+    local step=1
+
+    # Step: open the desktop app (if installed)
+    if [ "$ROLE_WORKSTATION" = true ]; then
+        echo -e "  ${BOLD}${step}.${NC} Open Hecate"
+        echo -e "     ${DIM}Launch hecate-web from your application menu, or run:${NC}"
+        echo -e "     ${CYAN}hecate-web${NC}"
+        echo ""
+        step=$((step + 1))
+    fi
+
+    # Step: check daemon health
+    echo -e "  ${BOLD}${step}.${NC} Verify the daemon is running"
+    echo -e "     ${CYAN}hecate status${NC}"
+    echo ""
+    step=$((step + 1))
+
+    # Step: browse plugins
+    echo -e "  ${BOLD}${step}.${NC} Browse plugins"
+    if [ "$ROLE_WORKSTATION" = true ]; then
+        echo -e "     ${DIM}Open the Appstore in hecate-web to discover and install plugins.${NC}"
+    else
+        echo -e "     ${CYAN}hecate install <plugin>${NC}"
+    fi
+    echo ""
+    step=$((step + 1))
+
+    # Step: LLM — only if AI or remote ollama configured
+    if [ "$ROLE_AI" = true ] || [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
+        echo -e "  ${BOLD}${step}.${NC} Try LLM Chat"
+        if [ "$ROLE_WORKSTATION" = true ]; then
+            echo -e "     ${DIM}Open the LLM page in hecate-web to chat with models.${NC}"
+        else
+            echo -e "     ${DIM}Use the API:${NC} curl --unix-socket ${INSTALL_DIR}/hecate-daemon/sockets/api.sock http://localhost/api/llm/models"
+        fi
+        echo ""
+        step=$((step + 1))
+    fi
+
+    # Step: cluster peers (if cluster mode)
+    if [ "$NODE_ROLE" = "cluster" ]; then
+        echo -e "  ${BOLD}${step}.${NC} Add cluster peers"
+        echo -e "     ${DIM}Run this installer on other nodes with the same cluster cookie.${NC}"
+        echo ""
+        step=$((step + 1))
+    fi
+
+    # Troubleshooting hint
+    echo -e "${DIM}Troubleshooting:${NC}"
+    echo -e "  ${DIM}hecate status${NC}                    ${DIM}— check services${NC}"
+    echo -e "  ${DIM}journalctl --user -u hecate-daemon -f${NC}  ${DIM}— daemon logs${NC}"
+    echo -e "  ${DIM}podman logs hecate-daemon${NC}         ${DIM}— container logs${NC}"
     echo ""
 }
 
