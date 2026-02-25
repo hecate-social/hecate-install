@@ -26,7 +26,7 @@ SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 REPO_BASE="https://github.com/hecate-social"
 
 # Docker image (GitHub Container Registry)
-HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:0.8.0"
+HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:0.9.2"
 
 # Flags
 HEADLESS=false
@@ -747,7 +747,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Container]
-Image=ghcr.io/hecate-social/hecate-daemon:0.8.0
+Image=ghcr.io/hecate-social/hecate-daemon:0.9.2
 ContainerName=hecate-daemon
 AutoUpdate=registry
 Network=host
@@ -846,14 +846,12 @@ update_hardware_config() {
 # -----------------------------------------------------------------------------
 
 seed_bundled_plugins() {
-    section "Seeding Bundled Plugin Containers"
+    section "Seeding Plugin Containers"
 
+    # Settings, Appstore, and Node were folded into hecate-daemon 0.9.0 — no separate containers needed.
     local plugins=(
-        "hecate-app-settingsd:ghcr.io/hecate-social/hecate-app-settingsd:0.1.0:Hecate Settings Plugin"
-        "hecate-app-appstored:ghcr.io/hecate-social/hecate-app-appstored:0.1.0:Hecate App Store Plugin"
-        "hecate-app-marthad:ghcr.io/hecate-social/hecate-marthad:0.1.2:Hecate Martha AI Agent Plugin"
-        "hecate-app-maculad:ghcr.io/hecate-social/hecate-app-maculad:0.1.0:Hecate Macula Mesh Plugin"
-        "hecate-app-snake-dueld:ghcr.io/hecate-social/hecate-app-snake-dueld:0.1.0:Hecate Snake Duel Plugin"
+        "hecate-marthad:ghcr.io/hecate-social/hecate-marthad:0.1.2:Hecate Martha AI Agent"
+        "hecate-app-snake-dueld:ghcr.io/hecate-social/hecate-app-snake-dueld:0.1.0:Hecate Snake Duel"
     )
 
     for entry in "${plugins[@]}"; do
@@ -927,14 +925,14 @@ groups:
     icon: "\u2699\uFE0F"
     collapsed: false
     apps:
-      - settings
+      - node
+      - llm
       - appstore
   - name: "DEVELOP"
     icon: "\uD83D\uDEE0\uFE0F"
     collapsed: false
     apps:
       - martha
-      - macula
   - name: "ARCADE"
     icon: "\uD83C\uDFAE"
     collapsed: false
@@ -1493,32 +1491,68 @@ install_web() {
 
     section "Installing Hecate Web"
 
+    local os
+    os=$(detect_os)
+
+    local arch version
+    arch=$(detect_arch)
+
+    version=$(get_latest_release "hecate-web")
+    if [ -z "$version" ]; then
+        warn "Could not determine latest hecate-web version"
+        echo "  Download manually: ${REPO_BASE}/hecate-web/releases/latest"
+        return
+    fi
+
+    # Tauri asset names use version without leading 'v'
+    local ver_num="${version#v}"
+
+    if [ "$os" = "darwin" ]; then
+        # macOS — download and mount .dmg
+        local dmg_arch="x64"
+        [ "$arch" = "arm64" ] && dmg_arch="aarch64"
+        local url="${REPO_BASE}/hecate-web/releases/download/${version}/Hecate_${ver_num}_${dmg_arch}.dmg"
+        local tmpfile
+        tmpfile=$(mktemp --suffix=.dmg)
+        download_file "$url" "$tmpfile"
+        info "Opening Hecate .dmg — drag to Applications to complete install"
+        open "$tmpfile"
+        ok "Hecate Web ${version} downloaded"
+        return
+    fi
+
     install_webkit_deps || {
         warn "Skipping Hecate Web (missing webkit2gtk)"
         return
     }
 
-    local os arch version url
-    os=$(detect_os)
-    arch=$(detect_arch)
-
-    version=$(get_latest_release "hecate-web")
-    if [ -z "$version" ]; then
-        version="v0.1.0"
+    if command_exists dpkg; then
+        # Debian/Ubuntu/Arch — install .deb
+        local deb_arch="amd64"
+        [ "$arch" = "arm64" ] && deb_arch="arm64"
+        local url="${REPO_BASE}/hecate-web/releases/download/${version}/Hecate_${ver_num}_${deb_arch}.deb"
+        local tmpfile
+        tmpfile=$(mktemp --suffix=.deb)
+        download_file "$url" "$tmpfile"
+        sudo dpkg -i "$tmpfile" || sudo apt-get install -f -y
+        rm -f "$tmpfile"
+        ok "Hecate Web ${version} installed via .deb"
+    elif command_exists rpm; then
+        # Fedora/RHEL — install .rpm
+        local rpm_arch="x86_64"
+        [ "$arch" = "arm64" ] && rpm_arch="aarch64"
+        local url="${REPO_BASE}/hecate-web/releases/download/${version}/Hecate-${ver_num}-1.${rpm_arch}.rpm"
+        local tmpfile
+        tmpfile=$(mktemp --suffix=.rpm)
+        download_file "$url" "$tmpfile"
+        sudo rpm -U "$tmpfile" || sudo dnf install -y "$tmpfile" 2>/dev/null || true
+        rm -f "$tmpfile"
+        ok "Hecate Web ${version} installed via .rpm"
+    else
+        # Fallback — tell user to download manually
+        warn "No supported package manager (dpkg/rpm) found"
+        echo "  Download from: ${REPO_BASE}/hecate-web/releases/latest"
     fi
-
-    url="${REPO_BASE}/hecate-web/releases/download/${version}/hecate-web-${os}-${arch}.tar.gz"
-
-    local tmpfile
-    tmpfile=$(mktemp)
-
-    download_file "$url" "$tmpfile"
-    tar -xzf "$tmpfile" -C "$BIN_DIR" 2>/dev/null || tar -xzf "$tmpfile" -C "$BIN_DIR"
-    rm -f "$tmpfile"
-
-    chmod +x "${BIN_DIR}/hecate-web"
-
-    ok "Hecate Web ${version} installed"
 }
 
 # -----------------------------------------------------------------------------
