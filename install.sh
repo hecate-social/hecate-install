@@ -691,6 +691,7 @@ create_directory_layout() {
     mkdir -p "${INSTALL_DIR}/hecate-daemon/connectors"
     mkdir -p "${INSTALL_DIR}/config"
     mkdir -p "${INSTALL_DIR}/secrets"
+    touch "${INSTALL_DIR}/secrets/llm-providers.env"
 
     # GitOps directories
     mkdir -p "${GITOPS_DIR}/system"
@@ -776,7 +777,7 @@ Environment=HOME=%h
 Volume=%h/.hecate/hecate-daemon:%h/.hecate/hecate-daemon:Z
 
 EnvironmentFile=%h/.hecate/gitops/system/hecate-daemon.env
-EnvironmentFile=-%h/.hecate/secrets/llm-providers.env
+EnvironmentFile=%h/.hecate/secrets/llm-providers.env
 
 # Health check via socket presence
 HealthCmd=test -S %h/.hecate/hecate-daemon/sockets/api.sock
