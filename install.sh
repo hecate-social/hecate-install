@@ -532,12 +532,14 @@ select_feature_roles() {
 
     echo ""
 
-    # Ask about Ollama configuration
-    echo "Ollama Configuration (AI/LLM features):"
+    # Ask about Ollama (local LLM inference — commercial providers work regardless)
+    echo "Ollama (local LLM models):"
+    echo -e "  ${DIM}Commercial providers (Anthropic, OpenAI, Google) work without Ollama.${NC}"
+    echo -e "  ${DIM}Ollama adds free, local models that run on your hardware.${NC}"
     echo ""
-    echo -e "  ${BOLD}1)${NC} Local          ${DIM}- Install Ollama on this machine (recommended)${NC}"
+    echo -e "  ${BOLD}1)${NC} Local          ${DIM}- Install Ollama on this machine${NC}"
     echo -e "  ${BOLD}2)${NC} Remote         ${DIM}- Use Ollama on another server${NC}"
-    echo -e "  ${BOLD}3)${NC} Skip           ${DIM}- No AI features${NC}"
+    echo -e "  ${BOLD}3)${NC} Skip           ${DIM}- No local models (commercial providers still work)${NC}"
     echo ""
     echo -en "  Enter choice [1]: " > /dev/tty
     read -r ollama_choice < /dev/tty
@@ -565,13 +567,13 @@ select_feature_roles() {
                 ROLE_AI=false
                 ok "Using remote Ollama: ${OLLAMA_HOST}"
             else
-                warn "No URL provided, skipping AI features"
+                warn "No URL provided, skipping Ollama"
                 ROLE_AI=false
             fi
             ;;
         3|*)
             ROLE_AI=false
-            info "AI features disabled"
+            info "Skipping Ollama — commercial LLM providers still available"
             ;;
     esac
 
