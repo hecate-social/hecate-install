@@ -815,13 +815,13 @@ update_hardware_config() {
 
     local env_file="${GITOPS_DIR}/system/hecate-daemon.env"
 
-    # Update env file with detected hardware values
+    # Update env file with detected hardware and local paths
     if [ -f "${env_file}" ]; then
-        # Use sed to update existing values
+        sed -i "s|^HECATE_SOCKET_PATH=.*|HECATE_SOCKET_PATH=${INSTALL_DIR}/hecate-daemon/sockets/api.sock|" "${env_file}" 2>/dev/null || true
         sed -i "s|^HECATE_RAM_GB=.*|HECATE_RAM_GB=${DETECTED_RAM_GB}|" "${env_file}" 2>/dev/null || true
         sed -i "s|^HECATE_CPU_CORES=.*|HECATE_CPU_CORES=${DETECTED_CPU_CORES}|" "${env_file}" 2>/dev/null || true
         sed -i "s|^HECATE_GPU=.*|HECATE_GPU=${gpu_type}|" "${env_file}" 2>/dev/null || true
-        sed -i "s|^HECATE_LLM_ENDPOINT=.*|HECATE_LLM_ENDPOINT=${OLLAMA_HOST}|" "${env_file}" 2>/dev/null || true
+        sed -i "s|^OLLAMA_HOST=.*|OLLAMA_HOST=${OLLAMA_HOST}|" "${env_file}" 2>/dev/null || true
     fi
 
     # Add cluster config if in cluster mode
@@ -887,23 +887,28 @@ setup_llm_secrets() {
     section "LLM Provider Configuration"
 
     local secrets_file="${INSTALL_DIR}/secrets/llm-providers.env"
+
+    # Known LLM provider API key env vars
+    local -a known_keys=(
+        ANTHROPIC_API_KEY
+        OPENAI_API_KEY
+        GROQ_API_KEY
+        GEMINI_API_KEY
+        GOOGLE_API_KEY
+        MISTRAL_API_KEY
+        DEEPSEEK_API_KEY
+        TOGETHER_API_KEY
+        FIREWORKS_API_KEY
+        PERPLEXITY_API_KEY
+    )
+
     local has_keys=false
-
-    # Check for API keys in environment
-    if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-        info "Found ANTHROPIC_API_KEY in environment"
-        has_keys=true
-    fi
-
-    if [ -n "${OPENAI_API_KEY:-}" ]; then
-        info "Found OPENAI_API_KEY in environment"
-        has_keys=true
-    fi
-
-    if [ -n "${GOOGLE_API_KEY:-}" ]; then
-        info "Found GOOGLE_API_KEY in environment"
-        has_keys=true
-    fi
+    for key in "${known_keys[@]}"; do
+        if [ -n "${!key:-}" ]; then
+            info "Found ${key} in environment"
+            has_keys=true
+        fi
+    done
 
     if [ "$has_keys" = true ]; then
         cat > "${secrets_file}" << EOF
@@ -912,14 +917,15 @@ setup_llm_secrets() {
 EOF
         chmod 600 "${secrets_file}"
 
-        [ -n "${ANTHROPIC_API_KEY:-}" ] && echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}" >> "${secrets_file}"
-        [ -n "${OPENAI_API_KEY:-}" ] && echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> "${secrets_file}"
-        [ -n "${GOOGLE_API_KEY:-}" ] && echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> "${secrets_file}"
+        for key in "${known_keys[@]}"; do
+            [ -n "${!key:-}" ] && echo "${key}=${!key}" >> "${secrets_file}"
+        done
 
         ok "LLM provider secrets saved to ${secrets_file}"
     else
         info "No LLM API keys found in environment"
-        info "To add later: export ANTHROPIC_API_KEY=... and re-run install"
+        info "To add later: export ANTHROPIC_API_KEY=... then re-run install"
+        info "Or edit ${secrets_file} directly"
     fi
 }
 
