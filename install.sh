@@ -138,7 +138,7 @@ download_file() {
     local url="$1"
     local dest="$2"
     info "Downloading: ${url##*/}"
-    curl -fsSL "$url" -o "$dest" || fatal "Failed to download: $url"
+    curl -fsSL "$url" -o "$dest"
 }
 
 # -----------------------------------------------------------------------------
@@ -1461,7 +1461,7 @@ install_web() {
         local url="${REPO_BASE}/hecate-web/releases/download/${version}/Hecate_${ver_num}_${dmg_arch}.dmg"
         local tmpfile
         tmpfile=$(mktemp --suffix=.dmg)
-        download_file "$url" "$tmpfile"
+        download_file "$url" "$tmpfile" || fatal "Failed to download hecate-web .dmg"
         info "Opening Hecate .dmg — drag to Applications to complete install"
         open "$tmpfile"
         ok "Hecate Web ${version} downloaded"
@@ -1482,10 +1482,15 @@ install_web() {
         # Debian/Ubuntu — install .deb natively
         local tmpfile
         tmpfile=$(mktemp --suffix=.deb)
-        download_file "$deb_url" "$tmpfile"
-        sudo dpkg -i "$tmpfile" || sudo apt-get install -f -y
-        rm -f "$tmpfile"
-        ok "Hecate Web ${version} installed via .deb"
+        if download_file "$deb_url" "$tmpfile"; then
+            sudo dpkg -i "$tmpfile" || sudo apt-get install -f -y
+            rm -f "$tmpfile"
+            ok "Hecate Web ${version} installed via .deb"
+        else
+            rm -f "$tmpfile"
+            warn "Failed to download hecate-web .deb"
+            echo "  Download from: ${REPO_BASE}/hecate-web/releases/latest"
+        fi
     elif command_exists rpm; then
         # Fedora/RHEL — install .rpm
         local rpm_arch="x86_64"
@@ -1493,16 +1498,26 @@ install_web() {
         local url="${REPO_BASE}/hecate-web/releases/download/${version}/Hecate-${ver_num}-1.${rpm_arch}.rpm"
         local tmpfile
         tmpfile=$(mktemp --suffix=.rpm)
-        download_file "$url" "$tmpfile"
-        sudo rpm -U "$tmpfile" || sudo dnf install -y "$tmpfile" 2>/dev/null || true
-        rm -f "$tmpfile"
-        ok "Hecate Web ${version} installed via .rpm"
+        if download_file "$url" "$tmpfile"; then
+            sudo rpm -U "$tmpfile" || sudo dnf install -y "$tmpfile" 2>/dev/null || true
+            rm -f "$tmpfile"
+            ok "Hecate Web ${version} installed via .rpm"
+        else
+            rm -f "$tmpfile"
+            warn "Failed to download hecate-web .rpm"
+            echo "  Download from: ${REPO_BASE}/hecate-web/releases/latest"
+        fi
     elif command_exists pacman; then
         # Arch/Manjaro — extract .deb manually (no dpkg needed)
         local tmpfile tmpdir
         tmpfile=$(mktemp --suffix=.deb)
         tmpdir=$(mktemp -d)
-        download_file "$deb_url" "$tmpfile"
+        if ! download_file "$deb_url" "$tmpfile"; then
+            rm -rf "${tmpfile}" "${tmpdir}"
+            warn "Failed to download hecate-web .deb"
+            echo "  Download from: ${REPO_BASE}/hecate-web/releases/latest"
+            return
+        fi
         cd "${tmpdir}"
         ar x "${tmpfile}" 2>/dev/null
         tar xf data.tar.* 2>/dev/null
@@ -1536,16 +1551,17 @@ install_cli() {
 
     mkdir -p "${BIN_DIR}" "${registry_dir}"
 
-    # Try downloading from GitHub releases first
-    if download_file "${cli_url}" "${BIN_DIR}/hecate" 2>/dev/null; then
+    # Try downloading from GitHub releases first (silently — may not exist yet)
+    if curl -fsSL "${cli_url}" -o "${BIN_DIR}/hecate" 2>/dev/null; then
         chmod +x "${BIN_DIR}/hecate"
-        download_file "${registry_url}" "${registry_dir}/registry.json" 2>/dev/null || true
+        curl -fsSL "${registry_url}" -o "${registry_dir}/registry.json" 2>/dev/null || true
         ok "Hecate CLI ${cli_version} installed from release"
         return 0
     fi
+    rm -f "${BIN_DIR}/hecate"
 
     # Fallback: clone the repo and copy the script
-    info "Release not available, installing from source..."
+    info "Installing from source..."
     local tmp_dir
     tmp_dir=$(mktemp -d)
     if git clone --depth 1 "${REPO_BASE}/hecate-cli.git" "${tmp_dir}/hecate-cli" 2>/dev/null; then
