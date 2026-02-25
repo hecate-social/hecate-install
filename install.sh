@@ -756,12 +756,17 @@ Image=ghcr.io/hecate-social/hecate-daemon:0.9.2
 ContainerName=hecate-daemon
 AutoUpdate=registry
 Network=host
-Volume=%h/.hecate/hecate-daemon:/data:Z
-Volume=%h/.hecate/config:%h/.hecate/config:Z
+
+# HOME=%h so convention paths (~/.hecate/...) resolve to real user home
+Environment=HOME=%h
+
+# Volume mounts — paths identical inside/outside the container
+Volume=%h/.hecate/hecate-daemon:%h/.hecate/hecate-daemon:Z
+
 EnvironmentFile=%h/.hecate/gitops/system/hecate-daemon.env
 
-# Health check: daemon socket presence
-HealthCmd=test -S /data/sockets/api.sock
+# Health check via socket presence
+HealthCmd=test -S %h/.hecate/hecate-daemon/sockets/api.sock
 HealthInterval=30s
 HealthRetries=3
 HealthTimeout=5s
@@ -784,9 +789,8 @@ EOF
 HECATE_MESH_BOOTSTRAP=boot.macula.io:4433
 HECATE_MESH_REALM=io.macula
 
-# API (Unix socket)
-HECATE_API_SOCKET=/data/sockets/api.sock
-HECATE_DATA_DIR=/data
+# API (Unix socket — path must match volume mount inside container)
+HECATE_SOCKET_PATH=${INSTALL_DIR}/hecate-daemon/sockets/api.sock
 
 # LLM
 HECATE_LLM_BACKEND=ollama
