@@ -1164,6 +1164,11 @@ deploy_hecate() {
     # Configure LLM secrets
     setup_llm_secrets
 
+    # Pull daemon image first so user sees download progress
+    info "Pulling hecate-daemon image..."
+    podman pull "${HECATE_IMAGE}"
+    ok "Image ready: ${HECATE_IMAGE}"
+
     # Run reconciler once to symlink Quadlet files
     info "Running initial reconciliation..."
     "${BIN_DIR}/hecate-reconciler" --once
