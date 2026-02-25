@@ -847,68 +847,6 @@ update_hardware_config() {
 }
 
 # -----------------------------------------------------------------------------
-# Bundled Plugin Containers
-# -----------------------------------------------------------------------------
-
-seed_bundled_plugins() {
-    section "Seeding Plugin Containers"
-
-    # Settings, Appstore, and Node were folded into hecate-daemon 0.9.0 — no separate containers needed.
-    local plugins=(
-        "hecate-marthad:ghcr.io/hecate-social/hecate-marthad:0.1.2:Hecate Martha AI Agent"
-        "hecate-app-snake-dueld:ghcr.io/hecate-social/hecate-app-snake-dueld:0.1.0:Hecate Snake Duel"
-    )
-
-    for entry in "${plugins[@]}"; do
-        IFS=':' read -r name image version description <<< "${entry}"
-        local container_file="${GITOPS_DIR}/apps/${name}.container"
-
-        if [ -f "${container_file}" ]; then
-            info "Skipping ${name} (already exists)"
-            continue
-        fi
-
-        cat > "${container_file}" << PLUGINEOF
-[Unit]
-Description=${description}
-After=hecate-daemon.service
-Wants=hecate-daemon.service
-
-[Container]
-Image=${image}:${version}
-ContainerName=${name}
-AutoUpdate=registry
-Network=host
-
-# HOME=%h so convention paths (~/.hecate/...) resolve to real user home
-Environment=HOME=%h
-
-# Volume mounts — convention paths identical inside/outside
-Volume=%h/.hecate/${name}:%h/.hecate/${name}:Z
-Volume=%h/.hecate/hecate-daemon/sockets:%h/.hecate/hecate-daemon/sockets:ro
-Volume=%h/.hecate/secrets:%h/.hecate/secrets:ro
-
-# Health check via convention path
-HealthCmd=test -S %h/.hecate/${name}/sockets/api.sock
-HealthInterval=30s
-HealthRetries=3
-HealthTimeout=5s
-HealthStartPeriod=10s
-
-[Service]
-Restart=on-failure
-RestartSec=5s
-TimeoutStartSec=60s
-
-[Install]
-WantedBy=default.target
-PLUGINEOF
-
-        ok "Created ${name}.container"
-    done
-}
-
-# -----------------------------------------------------------------------------
 # Default Sidebar Configuration
 # -----------------------------------------------------------------------------
 
@@ -920,11 +858,10 @@ seed_sidebar_config() {
         return
     fi
 
-    section "Seeding Default Sidebar Configuration"
-
     cat > "${config_file}" << 'SIDEBAREOF'
 # Sidebar group configuration for hecate-web
 # Groups organize plugins in the sidebar. Plugins not in any group appear under "Ungrouped".
+# Plugins are added here automatically when installed via the Appstore.
 groups:
   - name: "SYSTEM"
     icon: "\u2699\uFE0F"
@@ -933,16 +870,6 @@ groups:
       - node
       - llm
       - appstore
-  - name: "DEVELOP"
-    icon: "\uD83D\uDEE0\uFE0F"
-    collapsed: false
-    apps:
-      - martha
-  - name: "ARCADE"
-    icon: "\uD83C\uDFAE"
-    collapsed: false
-    apps:
-      - snake-duel
 SIDEBAREOF
 
     ok "Created default sidebar config"
@@ -1679,8 +1606,7 @@ show_summary() {
     fi
 
     echo -e "${DIM}To install plugins:${NC}"
-    echo -e "  Copy .container files to ${GITOPS_DIR}/apps/"
-    echo -e "  The reconciler will pick them up automatically."
+    echo -e "  Use the Appstore in hecate-web, or: hecate install <plugin>"
     echo ""
 }
 
@@ -1878,7 +1804,6 @@ main() {
     ensure_podman
     create_directory_layout
     seed_gitops
-    seed_bundled_plugins
     seed_sidebar_config
     install_reconciler
     deploy_hecate
