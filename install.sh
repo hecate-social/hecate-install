@@ -241,17 +241,29 @@ detect_hardware() {
 configure_firewall() {
     section "Firewall Configuration"
 
-    echo "Hecate uses these network ports:"
+    echo -e "${BOLD}Hecate needs these ports open for mesh networking:${NC}"
     echo ""
     show_required_ports
     echo ""
-    echo -e "${DIM}If your firewall blocks these ports, Hecate's mesh networking won't work.${NC}"
-    echo -e "${DIM}You can configure this manually later if you prefer.${NC}"
+    echo -e "  ${YELLOW}Without these ports, your node cannot discover or communicate${NC}"
+    echo -e "  ${YELLOW}with other Hecate nodes on the network.${NC}"
+    echo ""
+    echo -e "  ${DIM}This step checks your firewall and opens the ports above.${NC}"
+    echo -e "  ${DIM}Requires sudo. You can do this manually later if you prefer.${NC}"
     echo ""
 
-    if ! confirm "Check and configure firewall now? (requires sudo)" "n"; then
-        info "Skipping firewall — configure manually if needed"
-        return
+    if ! confirm "Configure firewall now? (recommended)" "y"; then
+        echo ""
+        echo -e "  ${YELLOW}${BOLD}Warning:${NC} ${YELLOW}Mesh networking will not work if these ports are blocked.${NC}"
+        echo -e "  ${DIM}To configure later, open the ports listed above in your firewall.${NC}"
+        echo ""
+        if ! confirm "Skip firewall configuration anyway?" "n"; then
+            # User changed their mind — configure it
+            echo ""
+        else
+            info "Skipping firewall — remember to open ports manually"
+            return
+        fi
     fi
 
     # Now that user consented to sudo, detect active firewall
