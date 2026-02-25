@@ -776,6 +776,7 @@ Environment=HOME=%h
 Volume=%h/.hecate/hecate-daemon:%h/.hecate/hecate-daemon:Z
 
 EnvironmentFile=%h/.hecate/gitops/system/hecate-daemon.env
+EnvironmentFile=-%h/.hecate/secrets/llm-providers.env
 
 # Health check via socket presence
 HealthCmd=test -S %h/.hecate/hecate-daemon/sockets/api.sock
