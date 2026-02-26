@@ -3,9 +3,13 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+    home-manager = {
+      url = "github:nix-community/home-manager/release-24.11";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, home-manager }:
     let
       # Helper to make a NixOS configuration for a given role and hardware
       mkSystem = { role, hardware ? "generic-x86", system ? "x86_64-linux", extraModules ? [ ] }:
@@ -13,6 +17,17 @@
           inherit system;
           modules = [
             (./configurations + "/${role}.nix")
+            (./hardware + "/${hardware}.nix")
+          ] ++ extraModules;
+        };
+
+      # Desktop configuration requires home-manager
+      mkDesktop = { hardware ? "generic-x86", system ? "x86_64-linux", extraModules ? [ ] }:
+        nixpkgs.lib.nixosSystem {
+          inherit system;
+          modules = [
+            home-manager.nixosModules.home-manager
+            ./configurations/desktop.nix
             (./hardware + "/${hardware}.nix")
           ] ++ extraModules;
         };
@@ -40,6 +55,11 @@
 
         workstation = mkSystem {
           role = "workstation";
+          hardware = "generic-x86";
+        };
+
+        # ── Desktop (Hyprland daily-driver) ─────────────────────────────
+        desktop = mkDesktop {
           hardware = "generic-x86";
         };
 
@@ -110,15 +130,16 @@
 
       # ── Packages ───────────────────────────────────────────────────────
       packages.x86_64-linux = {
-        # Single unified ISO — firstboot wizard handles role selection
+        # Graphical Hyprland live ISO — boots into full desktop
         # Use: nix build .#iso
         iso = let
           isoSystem = nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
             modules = [
-              ./configurations/standalone.nix
+              home-manager.nixosModules.home-manager
+              ./configurations/desktop.nix
               ./hardware/generic-x86.nix
-              "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
+              "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-graphical-calamares.nix"
               {
                 isoImage.isoBaseName = "hecate-os";
                 isoImage.volumeID = "HECATE_OS";
@@ -148,6 +169,10 @@
           boot-test = import ./tests/boot-test.nix { inherit pkgs; };
           plugin-test = import ./tests/plugin-test.nix { inherit pkgs; };
           firstboot-test = import ./tests/firstboot-test.nix { inherit pkgs; };
+          desktop-test = import ./tests/desktop-test.nix {
+            inherit pkgs;
+            home-manager = home-manager;
+          };
         };
     };
 }

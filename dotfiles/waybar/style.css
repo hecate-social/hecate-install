@@ -1,0 +1,88 @@
+/* Tokyo Night Minimal Waybar Theme */
+* {
+    border: none;
+    border-radius: 0;
+    font-family: "FiraCode Nerd Font", "Iosevka Nerd Font", monospace;
+    font-size: 11px;
+    min-height: 0;
+}
+
+window#waybar {
+    background: #1a1b26;
+    color: #ffffff;
+}
+
+/* Left side - Date & Time */
+#clock {
+    background: #1a1b26;
+    color: #ffffff;
+    padding: 0 8px;
+    margin: 0;
+    font-weight: bold;
+    font-size: 11px;
+}
+
+/* Right side modules */
+#pulseaudio,
+#bluetooth,
+#network {
+    background: transparent;
+    color: #ffffff;
+    padding: 0 5px;
+    margin: 0;
+    font-size: 11px;
+}
+
+/* Pulseaudio */
+#pulseaudio {
+    color: #9ece6a;
+}
+
+#pulseaudio.muted {
+    color: #565f89;
+}
+
+/* Bluetooth */
+#bluetooth {
+    color: #7dcfff;
+}
+
+#bluetooth.disabled,
+#bluetooth.off {
+    color: #565f89;
+}
+
+#bluetooth.connected {
+    color: #bb9af7;
+}
+
+/* Network */
+#network {
+    color: #7aa2f7;
+}
+
+#network.disconnected {
+    color: #f7768e;
+}
+
+/* Hover effects - subtle */
+#pulseaudio:hover,
+#bluetooth:hover,
+#network:hover {
+    background: rgba(125, 207, 255, 0.1);
+}
+
+#clock:hover {
+    background: rgba(122, 162, 247, 0.1);
+}
+
+/* Tooltip styling */
+tooltip {
+    background: rgba(26, 27, 38, 0.95);
+    border: 1px solid #414868;
+    border-radius: 5px;
+}
+
+tooltip label {
+    color: #c0caf5;
+}

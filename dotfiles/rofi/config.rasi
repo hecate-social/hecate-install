@@ -1,0 +1,9 @@
+configuration {
+    modi: "drun,emoji:rofimoji";
+    font: "FiraCode Nerd Font 11";
+    show-icons: true;
+    drun-display-format: "{name}";
+    terminal: "kitty";
+}
+
+@theme "tokyo-night"

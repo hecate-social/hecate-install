@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Install Nix
         uses: cachix/install-nix-action@v30
@@ -22,6 +24,11 @@ jobs:
           nix_path: nixpkgs=channel:nixos-24.11
           extra_nix_config: |
             experimental-features = nix-command flakes
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h /
 
       - name: Build HecateOS ISO
         run: nix build .#iso --out-link result
@@ -40,7 +47,7 @@ jobs:
           path: |
             hecate-os-*.iso
             SHA256SUMS
-          retention-days: 7
+          retention-days: 3
 
   release:
     needs: build-iso
@@ -56,11 +63,22 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: HecateOS ${{ github.ref_name }}
+          draft: false
+          prerelease: false
           body: |
             ## HecateOS ${{ github.ref_name }}
 
-            Single bootable ISO with guided setup. Boot from USB, the firstboot
-            wizard walks you through role selection and configuration.
+            Graphical Hyprland live ISO with Hecate daemon pre-installed.
+            Boot from USB into a fully configured developer desktop.
+
+            ### What's included
+
+            - **Hyprland** window manager (Tokyo Night theme)
+            - **Kitty** terminal, **Zsh** + Starship prompt
+            - **Neovim** (LazyVim), **Firefox**, **Waybar**, **Rofi**, **Dunst**
+            - **Developer tools**: bat, eza, fzf, zoxide, lazygit, podman, and more
+            - **Hecate daemon** with firstboot pairing wizard
+            - **Calamares** installer for disk installation
 
             ### Roles (chosen during firstboot)
 
@@ -85,3 +103,8 @@ jobs:
             hecate-os-*.iso
             SHA256SUMS
           generate_release_notes: true
+
+      - name: Delete build artifact
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: hecate-os-iso

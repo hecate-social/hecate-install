@@ -31,7 +31,8 @@
   };
 
   # ── Users ────────────────────────────────────────────────────────────
-  users.users.rl = {
+  # Parameterized: uses services.hecate.user (default: "rl")
+  users.users.${config.services.hecate.user} = {
     isNormalUser = true;
     extraGroups = [ "wheel" "podman" ];
     # Enable lingering so user services run without login
