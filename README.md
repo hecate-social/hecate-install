@@ -14,14 +14,14 @@
 | Method | Use Case | How |
 |--------|----------|-----|
 | **NixOS Flake** | Bootable USB/ISO/SD card | `nix build .#iso` |
-| **install.sh** | Existing Linux machine | `curl -fsSL https://hecate.io/install.sh \| bash` |
+| **install.sh** | Existing Linux machine | `curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh \| bash` |
 
 Both produce the same result: podman + reconciler + gitops + hecate-daemon.
 
 ## Quick Install (Existing Machine)
 
 ```bash
-curl -fsSL https://hecate.io/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh | bash
 ```
 
 ## NixOS Flake (Bootable Media)
@@ -54,7 +54,7 @@ For permanent installations, reference the flake in your NixOS config:
         ./hardware-configuration.nix
         {
           networking.hostName = "my-hecate-node";
-          services.hecate.daemon.version = "0.8.1";
+          services.hecate.daemon.version = "latest";
           services.hecate.ollama.models = [ "llama3.2" "deepseek-r1" ];
         }
       ];
@@ -109,43 +109,44 @@ No Kubernetes. No root. No cluster overhead.
 
 | Role | What It Does | Use Case |
 |------|-------------|----------|
-| **Standalone** | Full stack on one machine | Laptop, desktop, single server |
+| **Standalone** | Full stack on one machine | Single server, home lab |
 | **Cluster** | Joins BEAM cluster with peers | Multi-node home lab |
 | **Inference** | Ollama-only, no daemon | Dedicated GPU server |
+| **Workstation** | Standalone + desktop app | Laptop, desktop |
 
 ### Example Configurations
 
 **Standalone workstation** (default):
 ```bash
-curl -fsSL https://hecate.io/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh | bash
 ```
 
 **Headless server** (no desktop app):
 ```bash
-curl -fsSL https://hecate.io/install.sh | bash -s -- --daemon-only
+curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh | bash -s -- --daemon-only
 ```
 
 **Cluster node** (joins BEAM cluster):
 ```bash
-curl -fsSL https://hecate.io/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh | bash
 # Select "Cluster" role, provide cookie and peer addresses
 ```
 
 **Inference node** (GPU server):
 ```bash
-curl -fsSL https://hecate.io/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh | bash
 # Select "Inference" role
 ```
 
 ## What Gets Installed
 
-| Component | Standalone | Cluster | Inference |
-|-----------|:---------:|:-------:|:---------:|
-| Podman | yes | yes | - |
-| Hecate Daemon | yes | yes | - |
-| Reconciler | yes | yes | - |
-| Hecate Web | optional | optional | - |
-| Ollama | optional | optional | yes |
+| Component | Standalone | Cluster | Inference | Workstation |
+|-----------|:---------:|:-------:|:---------:|:-----------:|
+| Podman | yes | yes | - | yes |
+| Hecate Daemon | yes | yes | - | yes |
+| Reconciler | yes | yes | - | yes |
+| Hecate Web | optional | optional | - | yes |
+| Ollama | optional | optional | yes | optional |
 
 ## Installation Flow
 
@@ -179,15 +180,24 @@ curl -fsSL https://hecate.io/install.sh | bash
 ## Managing Services
 
 ```bash
-# CLI wrapper
+# Service management
 hecate status                    # Show all hecate services
-hecate logs                      # View daemon logs
-hecate health                    # Check daemon health
 hecate start                     # Start daemon
 hecate stop                      # Stop daemon
 hecate restart                   # Restart daemon
+hecate logs                      # View daemon logs
+hecate health                    # Check daemon health
 hecate update                    # Pull latest container images
 hecate reconcile                 # Manual reconciliation
+
+# Identity & pairing
+hecate identity                  # Show agent identity (MRI, public key)
+hecate pair                      # Start pairing flow
+
+# LLM
+hecate llm models                # List available LLM models
+hecate llm health                # Check LLM backend status
+hecate llm chat                  # Chat with a model
 
 # Direct systemd
 systemctl --user list-units 'hecate-*'
@@ -253,6 +263,8 @@ hecate reconcile
 | `HECATE_VERSION` | Version to install | `latest` |
 | `HECATE_INSTALL_DIR` | Data directory | `~/.hecate` |
 | `HECATE_BIN_DIR` | Binary directory | `~/.local/bin` |
+| `HECATE_HOSTNAME` | Override hostname inside container | Host hostname (via systemd `%H`) |
+| `HECATE_USER` | Override user inside container | Host user (via systemd `%u`) |
 
 ## Sudo Requirements
 
@@ -270,7 +282,7 @@ All hecate services run as **user-level systemd services** — no root needed at
 ## Uninstall
 
 ```bash
-curl -fsSL https://hecate.io/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/uninstall.sh | bash
 ```
 
 Or manually:

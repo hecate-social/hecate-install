@@ -7,61 +7,101 @@ Skills for interacting with the Hecate mesh network daemon. Used by Hecate Web, 
 Hecate is a mesh network daemon that enables AI agents to:
 - Discover and announce capabilities on the mesh
 - Build reputation through tracked RPC calls
-- Manage social connections (follow, endorse)
-- Subscribe to mesh topics
 - Manage UCAN-based capability tokens
 - Access local LLM inference
+- Manage social connections and mentorships
 
-The daemon runs on port 4444 and exposes a REST API.
+The daemon communicates via Unix socket at `~/.hecate/hecate-daemon/sockets/api.sock`.
 
 ---
 
-## Health & Identity
+## Health & Node Identity
 
 ### Health Check
 
 ```bash
-curl http://localhost:4444/health
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock http://localhost/health
 ```
 
 **Response:**
 ```json
-{"status": "healthy", "version": "0.1.0", "uptime_seconds": 3600}
+{"status": "healthy", "version": "0.11.2", "uptime_seconds": 3600}
 ```
 
-### Get Identity
+### Get Node Identity
 
 ```bash
-curl http://localhost:4444/identity
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock http://localhost/api/node/identity
 ```
 
 **Response:**
 ```json
 {
   "ok": true,
-  "mri": "mri:agent:io.macula/hecate-abc123",
-  "public_key": "ed25519:...",
-  "paired": true,
-  "org_identity": "mri:org:io.macula/my-org"
+  "node_identity": {
+    "mri": "mri:agent:io.macula/anonymous/hecate-a1b2",
+    "public_key": "base64...",
+    "realm": "io.macula",
+    "initialized": true
+  }
 }
 ```
 
-### Initialize Identity
+Node identity auto-initializes on first boot (Ed25519 keypair + MRI).
+
+---
+
+## Settings
+
+### Get Settings
 
 ```bash
-curl -X POST http://localhost:4444/identity/init
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock http://localhost/api/settings
 ```
 
-Creates a new keypair and agent MRI. Required before pairing.
+**Response:**
+```json
+{
+  "ok": true,
+  "identity": {
+    "hecate_user_id": "user-abc123",
+    "linux_user": "rl",
+    "hostname": "myhost",
+    "github_user": "rgfaber",
+    "realm": "io.macula",
+    "paired": true,
+    "paired_at": 1740000000,
+    "initiated_at": 1739900000,
+    "status": 3
+  },
+  "preferences": {}
+}
+```
+
+### Get Identity (subset)
+
+```bash
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock http://localhost/api/settings/identity
+```
+
+### Update Preferences
+
+```bash
+curl -X PUT --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/settings/preferences \
+  -H "Content-Type: application/json" \
+  -d '{"theme": "dark"}'
+```
 
 ---
 
 ## Pairing
 
-### Start Pairing Session
+### Initiate Pairing
 
 ```bash
-curl -X POST http://localhost:4444/api/pairing/start
+curl -X POST --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/pairing/initiate
 ```
 
 **Response:**
@@ -70,296 +110,48 @@ curl -X POST http://localhost:4444/api/pairing/start
   "ok": true,
   "session_id": "uuid-here",
   "confirm_code": "123456",
-  "pairing_url": "https://macula.io/pair/uuid-here",
-  "expires_at": 1738590600
+  "pairing_url": "https://macula.io/pair/uuid-here?code=123456",
+  "expires_in": 600
 }
 ```
+
+The pairing URL includes the confirmation code for seamless auto-confirmation.
 
 ### Check Pairing Status
 
 ```bash
-curl http://localhost:4444/api/pairing/status
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/pairing/status
 ```
 
 **Response:**
 ```json
-{"ok": true, "status": "pending"}
+{"ok": true, "status": "pairing", "confirm_code": "123456", "expires_in": 542}
 ```
 
-Status values: `idle`, `pending`, `paired`, `failed`
+Status values: `idle`, `pairing`, `paired`, `failed`
 
 ### Cancel Pairing
 
 ```bash
-curl -X POST http://localhost:4444/api/pairing/cancel
+curl -X POST --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/pairing/cancel
 ```
 
----
-
-## Capabilities
-
-### Announce a Capability
+### Simple Pair (CLI/testing)
 
 ```bash
-curl -X POST http://localhost:4444/capabilities/announce \
+curl -X POST --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/settings/pair \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "weather-forecast",
-    "description": "Get weather forecasts for any location",
-    "tags": ["weather", "forecast", "api"]
-  }'
+  -d '{"github_user": "rgfaber"}'
 ```
 
-### Discover Capabilities
+### Unpair
 
 ```bash
-curl -X POST http://localhost:4444/capabilities/discover \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tags": ["weather"],
-    "limit": 100
-  }'
-```
-
-### Get Capability Details
-
-```bash
-curl http://localhost:4444/capabilities/mri:capability:io.macula%2Fweather-forecast
-```
-
-Note: URL-encode the MRI (replace `/` with `%2F`).
-
-### Update Capability
-
-```bash
-curl -X PUT http://localhost:4444/capabilities/mri:capability:io.macula%2Fweather-forecast/update \
-  -H "Content-Type: application/json" \
-  -d '{
-    "description": "Updated description",
-    "tags": ["weather", "forecast", "updated"]
-  }'
-```
-
-### Retract Capability
-
-```bash
-curl -X DELETE http://localhost:4444/capabilities/mri:capability:io.macula%2Fweather-forecast/retract
-```
-
----
-
-## Social Graph
-
-### Follow an Agent
-
-```bash
-curl -X POST http://localhost:4444/social/follow \
-  -H "Content-Type: application/json" \
-  -d '{"agent_identity": "mri:agent:io.macula/other-agent"}'
-```
-
-### Unfollow an Agent
-
-```bash
-curl -X POST http://localhost:4444/social/unfollow \
-  -H "Content-Type: application/json" \
-  -d '{"agent_identity": "mri:agent:io.macula/other-agent"}'
-```
-
-### Endorse a Capability
-
-```bash
-curl -X POST http://localhost:4444/social/endorse \
-  -H "Content-Type: application/json" \
-  -d '{
-    "capability_mri": "mri:capability:io.macula/weather-forecast",
-    "comment": "Reliable and accurate forecasts"
-  }'
-```
-
-### Revoke Endorsement
-
-```bash
-curl -X DELETE http://localhost:4444/social/endorsement/revoke \
-  -H "Content-Type: application/json" \
-  -d '{"endorsement_id": "endorsement-uuid"}'
-```
-
-### Get Followers
-
-```bash
-curl http://localhost:4444/social/followers/mri:agent:io.macula%2Fmy-agent
-```
-
-### Get Following
-
-```bash
-curl http://localhost:4444/social/following/mri:agent:io.macula%2Fmy-agent
-```
-
-### Get Endorsements
-
-```bash
-curl http://localhost:4444/social/endorsements/mri:agent:io.macula%2Fmy-agent
-```
-
-### Get Social Graph
-
-```bash
-curl http://localhost:4444/social/graph/mri:agent:io.macula%2Fmy-agent
-```
-
----
-
-## Subscriptions
-
-### List Subscriptions
-
-```bash
-curl http://localhost:4444/subscriptions
-```
-
-### Subscribe to Topic
-
-```bash
-curl -X POST http://localhost:4444/subscriptions/subscribe \
-  -H "Content-Type: application/json" \
-  -d '{
-    "topic": "mesh.announcements",
-    "webhook": "http://localhost:8080/on-event"
-  }'
-```
-
-### Unsubscribe
-
-```bash
-curl -X DELETE http://localhost:4444/subscriptions/unsubscribe \
-  -H "Content-Type: application/json" \
-  -d '{"subscription_id": "sub-uuid"}'
-```
-
-### Subscription Stats
-
-```bash
-curl http://localhost:4444/subscriptions/stats
-```
-
----
-
-## Agents (Identity Management)
-
-### List Registered Agents
-
-```bash
-curl http://localhost:4444/agents
-```
-
-### Register Agent
-
-```bash
-curl -X POST http://localhost:4444/agents/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "my-assistant",
-    "description": "AI coding assistant"
-  }'
-```
-
-### Get Agent Details
-
-```bash
-curl http://localhost:4444/agents/mri:agent:io.macula%2Fmy-assistant
-```
-
-### Update Agent
-
-```bash
-curl -X PUT http://localhost:4444/agents/mri:agent:io.macula%2Fmy-assistant/update \
-  -H "Content-Type: application/json" \
-  -d '{"description": "Updated description"}'
-```
-
----
-
-## UCAN (Capability Tokens)
-
-### Grant Capability
-
-```bash
-curl -X POST http://localhost:4444/ucan/grant \
-  -H "Content-Type: application/json" \
-  -d '{
-    "to": "mri:agent:io.macula/other-agent",
-    "capability": "rpc/call",
-    "resource": "mri:capability:io.macula/my-service",
-    "expires_in": 3600
-  }'
-```
-
-### Revoke Capability
-
-```bash
-curl -X DELETE http://localhost:4444/ucan/revoke/capability-uuid
-```
-
-### List Capabilities
-
-```bash
-curl http://localhost:4444/ucan/capabilities
-```
-
-### Verify Capability Token
-
-```bash
-curl http://localhost:4444/ucan/verify/capability-uuid
-```
-
-### Verify Action
-
-```bash
-curl -X POST http://localhost:4444/ucan/verify \
-  -H "Content-Type: application/json" \
-  -d '{
-    "action": "rpc/call",
-    "resource": "mri:capability:io.macula/my-service",
-    "token": "ucan-token-here"
-  }'
-```
-
----
-
-## Reputation
-
-### Get Agent Reputation
-
-```bash
-curl http://localhost:4444/reputation/mri:agent:io.macula%2Fsome-agent
-```
-
-### List RPC Calls (for reputation tracking)
-
-```bash
-curl http://localhost:4444/rpc-calls
-```
-
-### List Disputes
-
-```bash
-curl http://localhost:4444/disputes
-```
-
-### Track RPC Call
-
-```bash
-curl -X POST http://localhost:4444/rpc/track \
-  -H "Content-Type: application/json" \
-  -d '{
-    "caller": "mri:agent:io.macula/caller",
-    "callee": "mri:agent:io.macula/callee",
-    "procedure": "weather.forecast",
-    "success": true,
-    "duration_ms": 150
-  }'
+curl -X POST --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/settings/unpair
 ```
 
 ---
@@ -369,7 +161,8 @@ curl -X POST http://localhost:4444/rpc/track \
 ### List Available Models
 
 ```bash
-curl http://localhost:4444/api/llm/models
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/llm/models
 ```
 
 **Response:**
@@ -377,7 +170,7 @@ curl http://localhost:4444/api/llm/models
 {
   "ok": true,
   "models": [
-    {"name": "llama3.2:latest", "size": 2000000000, "modified_at": "2024-01-15T10:30:00Z"}
+    {"name": "llama3.2:latest", "size": 2000000000, "modified_at": "2026-01-15T10:30:00Z"}
   ]
 }
 ```
@@ -385,7 +178,8 @@ curl http://localhost:4444/api/llm/models
 ### Chat Completion
 
 ```bash
-curl -X POST http://localhost:4444/api/llm/chat \
+curl -X POST --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/llm/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.2",
@@ -411,13 +205,237 @@ For streaming responses, set `"stream": true` to receive Server-Sent Events (SSE
 ### LLM Health Check
 
 ```bash
-curl http://localhost:4444/api/llm/health
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/llm/health
 ```
 
-**Response:**
-```json
-{"ok": true, "status": "healthy"}
+### List Providers
+
+```bash
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/llm/providers
 ```
+
+### Add Provider
+
+```bash
+curl -X POST --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/llm/providers/add \
+  -H "Content-Type: application/json" \
+  -d '{"name": "openai", "api_key": "sk-..."}'
+```
+
+### Reload Providers
+
+```bash
+curl -X POST --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/llm/providers/reload
+```
+
+### Remove Provider
+
+```bash
+curl -X POST --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/llm/providers/:name/remove
+```
+
+### Usage / Cost Tracking
+
+```bash
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/llm/usage/cost
+
+# Per venture:
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/llm/usage/cost/:venture_id
+```
+
+---
+
+## Mentorships
+
+### Submit Learning
+
+```bash
+curl -X POST --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/mentors/learnings/submit \
+  -H "Content-Type: application/json" \
+  -d '{"topic": "erlang", "content": "OTP supervision trees..."}'
+```
+
+### List Learnings
+
+```bash
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/mentors/learnings
+```
+
+### Get Learning by ID
+
+```bash
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/mentors/learnings/:learning_id
+```
+
+### Validate / Reject / Endorse / Dispute / Resolve Learning
+
+```bash
+curl -X POST --unix-socket ... http://localhost/api/mentors/learnings/:id/validate
+curl -X POST --unix-socket ... http://localhost/api/mentors/learnings/:id/reject
+curl -X POST --unix-socket ... http://localhost/api/mentors/learnings/:id/endorse
+curl -X POST --unix-socket ... http://localhost/api/mentors/learnings/:id/dispute
+curl -X POST --unix-socket ... http://localhost/api/mentors/learnings/:id/resolve
+```
+
+### Mentor Profiles
+
+```bash
+curl --unix-socket ... http://localhost/api/mentors/profiles
+curl --unix-socket ... http://localhost/api/mentors/profiles/:agent_id
+```
+
+### Mentor Subscriptions
+
+```bash
+curl -X POST --unix-socket ... http://localhost/api/mentors/subscribe
+curl -X POST --unix-socket ... http://localhost/api/mentors/unsubscribe
+curl --unix-socket ... http://localhost/api/mentors/subscriptions
+```
+
+### Expertise
+
+```bash
+curl -X POST --unix-socket ... http://localhost/api/mentors/expertise
+curl -X POST --unix-socket ... http://localhost/api/mentors/expertise/withdraw
+```
+
+### Remote Learnings
+
+```bash
+curl --unix-socket ... http://localhost/api/mentors/remote
+```
+
+---
+
+## Appstore (Licenses & Catalog)
+
+### Browse Catalog
+
+```bash
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/appstore/catalog
+```
+
+### Get Plugin Details
+
+```bash
+curl --unix-socket ... http://localhost/api/appstore/plugin/:id
+```
+
+### List Licenses
+
+```bash
+curl --unix-socket ... http://localhost/api/appstore/licenses
+```
+
+### License Lifecycle
+
+```bash
+curl -X POST --unix-socket ... http://localhost/api/appstore/licenses/initiate
+curl -X POST --unix-socket ... http://localhost/api/appstore/licenses/buy
+curl -X POST --unix-socket ... http://localhost/api/appstore/licenses/revoke
+curl -X POST --unix-socket ... http://localhost/api/appstore/licenses/archive
+curl -X POST --unix-socket ... http://localhost/api/appstore/licenses/:id/announce
+curl -X POST --unix-socket ... http://localhost/api/appstore/licenses/:id/publish
+```
+
+---
+
+## Plugins
+
+### List Installed Plugins
+
+```bash
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/node/plugins
+```
+
+### Install / Upgrade / Remove Plugin
+
+```bash
+curl -X POST --unix-socket ... http://localhost/api/node/plugins/install
+curl -X POST --unix-socket ... http://localhost/api/node/plugins/upgrade
+curl -X POST --unix-socket ... http://localhost/api/node/plugins/remove
+```
+
+---
+
+## RPC
+
+### Call Remote Procedure
+
+```bash
+curl -X POST --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/rpc/call \
+  -H "Content-Type: application/json" \
+  -d '{
+    "procedure": "weather.forecast",
+    "args": {"location": "Brussels"}
+  }'
+```
+
+---
+
+## Geographic Restrictions
+
+### Check Geo Status
+
+```bash
+curl --unix-socket ... http://localhost/api/geo/status
+```
+
+### Reload Geo Database
+
+```bash
+curl -X POST --unix-socket ... http://localhost/api/geo/reload
+```
+
+### Check IP
+
+```bash
+curl --unix-socket ... http://localhost/api/geo/check/:ip
+```
+
+---
+
+## Sidebar Configuration
+
+### Get Sidebar Config
+
+```bash
+curl --unix-socket ... http://localhost/api/config/sidebar
+```
+
+### Update Sidebar Config
+
+```bash
+curl -X PUT --unix-socket ... http://localhost/api/config/sidebar \
+  -H "Content-Type: application/json" \
+  -d '{"items": [...]}'
+```
+
+---
+
+## Streaming
+
+### Facts Stream (SSE)
+
+```bash
+curl --unix-socket ~/.hecate/hecate-daemon/sockets/api.sock \
+  http://localhost/api/facts/stream
+```
+
+Server-Sent Events stream for real-time domain events.
 
 ---
 
@@ -426,13 +444,13 @@ curl http://localhost:4444/api/llm/health
 Macula Resource Identifiers (MRIs) follow this format:
 
 ```
-mri:{type}:{realm}/{path}
+mri:{type}:{realm}/{owner}/{name}
 ```
 
 | Type | Description | Example |
 |------|-------------|---------|
-| `agent` | An agent identity | `mri:agent:io.macula/hecate-abc123` |
-| `capability` | A discoverable capability | `mri:capability:io.macula/weather-forecast` |
+| `agent` | An agent identity | `mri:agent:io.macula/myuser/hecate-a1b2` |
+| `capability` | A discoverable capability | `mri:capability:io.macula/myuser/weather` |
 | `org` | An organization | `mri:org:io.macula/my-company` |
 
 ---
@@ -457,7 +475,8 @@ All API responses follow this format:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `HECATE_URL` | Daemon API URL | `http://localhost:4444` |
+| `HECATE_HOSTNAME` | Override hostname inside container | Host hostname |
+| `HECATE_USER` | Override user inside container | Host user |
 
 ---
 
@@ -466,14 +485,21 @@ All API responses follow this format:
 The `hecate` CLI wrapper provides convenient access:
 
 ```bash
+# Service management
+hecate status         # Show all hecate services
 hecate start          # Start the daemon
 hecate stop           # Stop the daemon
-hecate status         # Show daemon status
+hecate restart        # Restart the daemon
 hecate logs           # View daemon logs
 hecate health         # Check daemon health
-hecate identity       # Show agent identity
-hecate init           # Initialize identity
+hecate update         # Pull latest container images
+hecate reconcile      # Manual reconciliation
+
+# Identity & pairing
+hecate identity       # Show agent identity (MRI, public key)
 hecate pair           # Start pairing flow
+
+# LLM
 hecate llm models     # List available LLM models
 hecate llm health     # Check LLM backend status
 hecate llm chat       # Chat with a model

@@ -37,7 +37,7 @@ host00.lab          # Ollama-only nodes (zero or more)
 | `hecate_bootstrap` | `boot.macula.io:4433` | Bootstrap server |
 | `ollama_host` | `http://localhost:11434` | Ollama URL |
 | `ollama_models` | `['llama3.2']` | Models to pull on inference nodes |
-| `hecate_image` | `ghcr.io/hecate-social/hecate-daemon:0.8.0` | Daemon image |
+| `hecate_image` | `ghcr.io/hecate-social/hecate-daemon:latest` | Daemon image |
 | `erlang_cookie` | (generated) | BEAM cluster shared cookie |
 
 ## Usage Examples
