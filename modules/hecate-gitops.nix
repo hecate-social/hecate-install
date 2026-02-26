@@ -39,6 +39,8 @@ let
     "ContainerName=hecate-daemon"
     "AutoUpdate=registry"
     "Network=host"
+    "Environment=HECATE_HOSTNAME=%H"
+    "Environment=HECATE_USER=%u"
     "Volume=%h/.hecate/hecate-daemon:/data:Z"
     "EnvironmentFile=%h/.hecate/gitops/system/hecate-daemon.env"
     ""

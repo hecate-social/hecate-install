@@ -765,13 +765,16 @@ After=network-online.target
 Wants=network-online.target
 
 [Container]
-Image=ghcr.io/hecate-social/hecate-daemon:0.9.3
+Image=ghcr.io/hecate-social/hecate-daemon:latest
 ContainerName=hecate-daemon
 AutoUpdate=registry
 Network=host
 
 # HOME=%h so convention paths (~/.hecate/...) resolve to real user home
+# %H = host hostname, %u = host user (not container root/hostname)
 Environment=HOME=%h
+Environment=HECATE_HOSTNAME=%H
+Environment=HECATE_USER=%u
 
 # Volume mounts — paths identical inside/outside the container
 Volume=%h/.hecate/hecate-daemon:%h/.hecate/hecate-daemon:Z
