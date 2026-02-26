@@ -26,7 +26,7 @@ SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 REPO_BASE="https://github.com/hecate-social"
 
 # Docker image (GitHub Container Registry)
-HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:0.9.3"
+HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:latest"
 
 # Flags
 HEADLESS=false
