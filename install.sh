@@ -1455,10 +1455,8 @@ install_web() {
 
     section "Installing Hecate Web"
 
-    local os
+    local os arch version
     os=$(detect_os)
-
-    local arch version
     arch=$(detect_arch)
 
     version=$(get_latest_release "hecate-web")
@@ -1468,11 +1466,9 @@ install_web() {
         return
     fi
 
-    # Tauri asset names use version without leading 'v'
-    local ver_num="${version#v}"
-
     if [ "$os" = "darwin" ]; then
         # macOS — download and mount .dmg
+        local ver_num="${version#v}"
         local dmg_arch="x64"
         [ "$arch" = "arm64" ] && dmg_arch="aarch64"
         local url="${REPO_BASE}/hecate-web/releases/download/${version}/Hecate_${ver_num}_${dmg_arch}.dmg"
@@ -1485,72 +1481,91 @@ install_web() {
         return
     fi
 
+    # Linux — install to user space (~/.local/bin) so the in-app updater
+    # can replace the binary without sudo. Uses the portable tarball asset.
     install_webkit_deps || {
         warn "Skipping Hecate Web (missing webkit2gtk)"
         return
     }
 
-    # Determine download URL based on format
-    local deb_arch="amd64"
-    [ "$arch" = "arm64" ] && deb_arch="arm64"
-    local deb_url="${REPO_BASE}/hecate-web/releases/download/${version}/Hecate_${ver_num}_${deb_arch}.deb"
+    # Migrate: remove system-installed binary from previous installs
+    if [ -f "/usr/bin/hecate-web" ]; then
+        info "Removing system-installed binary at /usr/bin/hecate-web..."
+        sudo rm -f /usr/bin/hecate-web
+    fi
+    if [ -f "/usr/share/applications/Hecate.desktop" ]; then
+        sudo rm -f /usr/share/applications/Hecate.desktop
+    fi
+    for icon_dir in /usr/share/icons/hicolor/*/apps; do
+        sudo rm -f "${icon_dir}/hecate-web.png" 2>/dev/null
+    done
 
-    if command_exists dpkg; then
-        # Debian/Ubuntu — install .deb natively
-        local tmpfile
-        tmpfile=$(mktemp --suffix=.deb)
-        if download_file "$deb_url" "$tmpfile"; then
-            sudo dpkg -i "$tmpfile" || sudo apt-get install -f -y
-            rm -f "$tmpfile"
-            ok "Hecate Web ${version} installed via .deb"
-        else
-            rm -f "$tmpfile"
-            warn "Failed to download hecate-web .deb"
-            echo "  Download from: ${REPO_BASE}/hecate-web/releases/latest"
-        fi
-    elif command_exists rpm; then
-        # Fedora/RHEL — install .rpm
-        local rpm_arch="x86_64"
-        [ "$arch" = "arm64" ] && rpm_arch="aarch64"
-        local url="${REPO_BASE}/hecate-web/releases/download/${version}/Hecate-${ver_num}-1.${rpm_arch}.rpm"
-        local tmpfile
-        tmpfile=$(mktemp --suffix=.rpm)
-        if download_file "$url" "$tmpfile"; then
-            sudo rpm -U "$tmpfile" || sudo dnf install -y "$tmpfile" 2>/dev/null || true
-            rm -f "$tmpfile"
-            ok "Hecate Web ${version} installed via .rpm"
-        else
-            rm -f "$tmpfile"
-            warn "Failed to download hecate-web .rpm"
-            echo "  Download from: ${REPO_BASE}/hecate-web/releases/latest"
-        fi
-    elif command_exists pacman; then
-        # Arch/Manjaro — extract .deb manually (no dpkg needed)
-        local tmpfile tmpdir
-        tmpfile=$(mktemp --suffix=.deb)
-        tmpdir=$(mktemp -d)
-        if ! download_file "$deb_url" "$tmpfile"; then
-            rm -rf "${tmpfile}" "${tmpdir}"
-            warn "Failed to download hecate-web .deb"
-            echo "  Download from: ${REPO_BASE}/hecate-web/releases/latest"
-            return
-        fi
-        cd "${tmpdir}"
-        ar x "${tmpfile}" 2>/dev/null
-        tar xf data.tar.* 2>/dev/null
-        if [ -d "usr" ]; then
-            sudo cp -r usr/* /usr/
-            ok "Hecate Web ${version} installed (extracted from .deb)"
-        else
-            warn "Could not extract .deb package"
-            echo "  Download from: ${REPO_BASE}/hecate-web/releases/latest"
-        fi
-        cd - > /dev/null
-        rm -rf "${tmpfile}" "${tmpdir}"
-    else
-        # Fallback
-        warn "No supported package manager found"
+    # Download portable tarball
+    local url="${REPO_BASE}/hecate-web/releases/download/${version}/hecate-web-${os}-${arch}.tar.gz"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    if ! download_file "$url" "${tmpdir}/hecate-web.tar.gz"; then
+        rm -rf "${tmpdir}"
+        warn "Failed to download hecate-web tarball"
         echo "  Download from: ${REPO_BASE}/hecate-web/releases/latest"
+        return
+    fi
+
+    tar -xzf "${tmpdir}/hecate-web.tar.gz" -C "${tmpdir}"
+    if [ ! -f "${tmpdir}/hecate-web" ]; then
+        rm -rf "${tmpdir}"
+        warn "hecate-web binary not found in archive"
+        return
+    fi
+
+    # Install binary to user space
+    mkdir -p "${BIN_DIR}"
+    cp "${tmpdir}/hecate-web" "${BIN_DIR}/hecate-web"
+    chmod 755 "${BIN_DIR}/hecate-web"
+    rm -rf "${tmpdir}"
+
+    # Install .desktop file to user space
+    install_web_desktop_entry
+
+    ok "Hecate Web ${version} installed to ${BIN_DIR}/hecate-web"
+    echo "  In-app updates will work automatically (no sudo required)"
+}
+
+install_web_desktop_entry() {
+    local apps_dir="${HOME}/.local/share/applications"
+    local icons_dir="${HOME}/.local/share/icons/hicolor"
+    mkdir -p "${apps_dir}"
+
+    cat > "${apps_dir}/hecate-web.desktop" << DESKTOP
+[Desktop Entry]
+Name=Hecate
+Comment=Hecate Desktop — site-specific browser for Hecate Daemon
+Exec=${BIN_DIR}/hecate-web
+StartupWMClass=hecate-web
+Icon=hecate-web
+Terminal=false
+Type=Application
+Categories=Development;Network;
+DESKTOP
+
+    # Install icons from the binary's bundled assets if available.
+    # The Tauri tarball only contains the binary, so extract icons from the
+    # hecate-web repo if present locally, otherwise skip (icon will be missing
+    # but the app still works).
+    local web_repo="${HOME}/work/github.com/hecate-social/hecate-web"
+    if [ -d "${web_repo}/src-tauri/icons" ]; then
+        for size in 32x32 128x128; do
+            local icon_src="${web_repo}/src-tauri/icons/${size}.png"
+            if [ -f "${icon_src}" ]; then
+                mkdir -p "${icons_dir}/${size}/apps"
+                cp "${icon_src}" "${icons_dir}/${size}/apps/hecate-web.png"
+            fi
+        done
+    fi
+
+    # Update desktop database if available
+    if command_exists update-desktop-database; then
+        update-desktop-database "${apps_dir}" 2>/dev/null || true
     fi
 }
 
