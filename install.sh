@@ -345,20 +345,20 @@ show_required_ports() {
     case "$NODE_ROLE" in
         inference)
             echo "Required ports for Inference node:"
-            echo -e "  ${CYAN}11434/tcp${NC}  - Ollama API"
-            echo -e "  ${CYAN}22/tcp${NC}     - SSH"
+            echo -e "  ${CYAN}11434/tcp${NC}  - Ollama API — lets other nodes send LLM inference requests to this node"
+            echo -e "  ${CYAN}22/tcp${NC}     - SSH — remote management access (keeps you from being locked out when the firewall activates)"
             ;;
         standalone)
             echo "Required ports for Standalone node:"
-            echo -e "  ${CYAN}4433/udp${NC}   - Macula mesh (QUIC)"
-            echo -e "  ${CYAN}22/tcp${NC}     - SSH"
+            echo -e "  ${CYAN}4433/udp${NC}   - Macula mesh (QUIC) — peer-to-peer discovery and communication between Hecate nodes"
+            echo -e "  ${CYAN}22/tcp${NC}     - SSH — remote management access (keeps you from being locked out when the firewall activates)"
             ;;
         cluster)
             echo "Required ports for Cluster node:"
-            echo -e "  ${CYAN}4433/udp${NC}   - Macula mesh (QUIC)"
-            echo -e "  ${CYAN}4369/tcp${NC}   - EPMD (Erlang)"
-            echo -e "  ${CYAN}9100/tcp${NC}   - Erlang distribution"
-            echo -e "  ${CYAN}22/tcp${NC}     - SSH"
+            echo -e "  ${CYAN}4433/udp${NC}   - Macula mesh (QUIC) — peer-to-peer discovery and communication between Hecate nodes"
+            echo -e "  ${CYAN}4369/tcp${NC}   - EPMD — lets Erlang/BEAM nodes find each other for clustering"
+            echo -e "  ${CYAN}9100/tcp${NC}   - Erlang distribution — inter-node communication for BEAM clustering"
+            echo -e "  ${CYAN}22/tcp${NC}     - SSH — remote management access (keeps you from being locked out when the firewall activates)"
             ;;
     esac
 }
