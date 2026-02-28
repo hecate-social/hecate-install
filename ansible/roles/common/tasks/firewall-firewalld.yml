@@ -1,5 +1,8 @@
 ---
 # Firewalld configuration
+#
+# SSH is always opened so Ansible (and admins) can still reach
+# the node after firewalld rules are applied.
 
 - name: Check if firewalld is installed
   command: which firewall-cmd
@@ -10,6 +13,14 @@
 - name: Configure firewalld rules
   when: firewalld_check.rc == 0
   block:
+    # Required for Ansible management access
+    - name: Allow SSH (Ansible management access)
+      firewalld:
+        service: ssh
+        permanent: yes
+        state: enabled
+      notify: reload firewalld
+
     # Cluster node ports
     - name: Allow Macula mesh
       firewalld:

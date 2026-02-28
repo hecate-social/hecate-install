@@ -105,12 +105,15 @@ ansible-playbook -i inventory.ini hecate.yml --check
 
 ## Firewall Ports
 
+### All Nodes
+- `22/tcp` - SSH (Ansible management access — keeps you from being locked out when firewall activates)
+
 ### Cluster Nodes
 - `4433/udp` - Macula mesh (QUIC)
-- `4369/tcp` - EPMD (Erlang)
+- `4369/tcp` - EPMD (Erlang port mapper)
 - `9100/tcp` - Erlang distribution
 
-### Inference
+### Inference Nodes
 - `11434/tcp` - Ollama API
 
 ## Troubleshooting

@@ -1,5 +1,9 @@
 ---
 # UFW firewall configuration
+#
+# UFW defaults to deny-all. We must explicitly allow ports.
+# SSH is always opened so Ansible (and admins) can still reach
+# the node after the firewall is activated.
 
 - name: Check if ufw is installed
   command: which ufw
@@ -10,12 +14,14 @@
 - name: Configure UFW rules
   when: ufw_check.rc == 0
   block:
-    - name: Allow SSH
+    # Required for Ansible management access — without this
+    # you'd be locked out the moment UFW activates.
+    - name: Allow SSH (Ansible management access)
       ufw:
         rule: allow
         port: '22'
         proto: tcp
-        comment: 'SSH'
+        comment: 'SSH — Ansible management'
 
     # Cluster node ports
     - name: Allow Macula mesh

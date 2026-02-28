@@ -33,6 +33,50 @@
   roles:
     - inference
 
+- name: Deployment summary
+  hosts: hecate
+  tags: [cluster, inference, common]
+  tasks:
+    - name: Gather open ports
+      shell: |
+        if command -v ufw >/dev/null 2>&1; then
+          ufw status | grep -E 'ALLOW' || echo '(no UFW rules)'
+        elif command -v firewall-cmd >/dev/null 2>&1; then
+          firewall-cmd --list-all 2>/dev/null | grep -E 'ports|services' || echo '(no firewalld rules)'
+        else
+          echo '(no firewall detected)'
+        fi
+      register: firewall_status
+      changed_when: false
+
+    - name: Display deployment summary
+      debug:
+        msg: |
+
+          ╔══════════════════════════════════════════════════╗
+          ║           Hecate Deployment Summary              ║
+          ╠══════════════════════════════════════════════════╣
+          ║ Node:       {{ inventory_hostname }}
+          ║ Role:       {{ node_role | default('cluster') }}
+          ║ IP:         {{ ansible_default_ipv4.address | default('unknown') }}
+          ║ RAM:        {{ ansible_memtotal_mb }}MB
+          ║ CPUs:       {{ ansible_processor_vcpus }}
+          ╠══════════════════════════════════════════════════╣
+          ║ Firewall:
+          {{ firewall_status.stdout | indent(10, false) }}
+          ╠══════════════════════════════════════════════════╣
+          ║ Paths:
+          ║   Data:     ~/.hecate/hecate-daemon/
+          ║   GitOps:   ~/.hecate/gitops/
+          ║   Config:   ~/.hecate/config/
+          ║   Secrets:  ~/.hecate/secrets/
+          ║   Socket:   ~/.hecate/hecate-daemon/sockets/api.sock
+          ╠══════════════════════════════════════════════════╣
+          ║ Cluster:
+          ║   Cookie:   {{ erlang_cookie | default('(not set)') }}
+          ║   Peers:    {{ groups['cluster'] | default([]) | join(', ') }}
+          ╚══════════════════════════════════════════════════╝
+
 - name: Show cluster status
   hosts: cluster
   tags: [status]
