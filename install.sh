@@ -758,7 +758,9 @@ seed_gitops() {
 
 create_default_quadlet_files() {
     # Fallback: create minimal Quadlet files inline
-    cat > "${GITOPS_DIR}/system/hecate-daemon.container" << 'EOF'
+    local arch
+    arch=$(detect_arch)
+    cat > "${GITOPS_DIR}/system/hecate-daemon.container" << EOF
 [Unit]
 Description=Hecate Daemon (core)
 After=network-online.target
@@ -767,6 +769,7 @@ Wants=network-online.target
 [Container]
 Image=ghcr.io/hecate-social/hecate-daemon:latest
 ContainerName=hecate-daemon
+PodmanArgs=--arch ${arch}
 AutoUpdate=registry
 Network=host
 
