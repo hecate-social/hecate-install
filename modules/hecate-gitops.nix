@@ -52,7 +52,7 @@ let
     "HealthStartPeriod=15s"
     ""
     "[Service]"
-    "Restart=on-failure"
+    "Restart=always"
     "RestartSec=10s"
     "TimeoutStartSec=120s"
     ""
