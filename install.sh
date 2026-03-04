@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Hecate Node Installer (systemd + podman)
-# Usage: curl -fsSL https://hecate.io/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh | bash
 #
 # Installs:
 #   - podman (rootless containers)
@@ -1905,7 +1905,7 @@ select_ollama() {
 show_help() {
     echo "Hecate Node Installer (systemd + podman)"
     echo ""
-    echo "Usage: curl -fsSL https://hecate.io/install.sh | bash"
+    echo "Usage: curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh | bash"
     echo ""
     echo "Options:"
     echo "  --daemon-only     Install daemon without desktop app"

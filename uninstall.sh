@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Hecate Node Uninstaller (systemd + podman)
-# Usage: curl -fsSL https://hecate.io/uninstall.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/uninstall.sh | bash
 #
 set -euo pipefail
 
@@ -414,5 +414,5 @@ echo "Removed:"
 [ "$FOUND_WEB" = true ] && echo "  - Desktop app (hecate-web)"
 echo ""
 echo "To summon her again:"
-echo -e "  ${CYAN}curl -fsSL https://hecate.io/install.sh | bash${NC}"
+echo -e "  ${CYAN}curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh | bash${NC}"
 echo ""
