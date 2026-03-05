@@ -105,11 +105,26 @@ jobs:
           name: hecatos-installer-iso
           path: artifacts/installer
 
-      - name: Combine checksums
+      - name: Prepare release assets
         run: |
-          cat artifacts/live/SHA256SUMS artifacts/installer/SHA256SUMS > SHA256SUMS
-          cp artifacts/live/hecatos-live-*.iso .
           cp artifacts/installer/hecatos-installer-*.iso .
+          cp artifacts/live/hecatos-live-*.iso .
+
+          # GitHub Releases has a 2GB per-asset limit
+          # Split any ISO exceeding 1.9GB into parts
+          max_size=1900000000
+          for iso in hecatos-*.iso; do
+            size=$(stat -c%s "$iso")
+            if [ "$size" -gt "$max_size" ]; then
+              echo "Splitting $iso ($size bytes) into 1.9GB parts..."
+              split -b 1900m -d --additional-suffix=.iso.part "$iso" "${iso%.iso}-"
+              rm "$iso"
+              echo "# Reassemble with: cat ${iso%.iso}-*.iso.part > $iso" >> DOWNLOAD.md
+            fi
+          done
+
+          # Generate checksums for all release files (full ISOs and parts)
+          sha256sum hecatos-*.iso hecatos-*.iso.part 2>/dev/null > SHA256SUMS || true
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -146,8 +161,16 @@ jobs:
             | **Workstation** | Standalone + desktop |
             | **Desktop** | Full daily-driver desktop |
 
-            ### Write to USB
+            ### Download & Write to USB
 
+            **Installer ISO** — single file, download directly.
+
+            **Live Desktop ISO** — split into parts (>2GB). Reassemble first:
+            ```bash
+            cat hecatos-live-${{ github.ref_name }}-*.iso.part > hecatos-live-${{ github.ref_name }}.iso
+            ```
+
+            Then write to USB:
             ```bash
             # Live desktop (Try + Install)
             sudo dd if=hecatos-live-${{ github.ref_name }}.iso of=/dev/sdX bs=4M status=progress
@@ -163,6 +186,7 @@ jobs:
             ```
           files: |
             hecatos-live-*.iso
+            hecatos-live-*.iso.part
             hecatos-installer-*.iso
             SHA256SUMS
           generate_release_notes: true
