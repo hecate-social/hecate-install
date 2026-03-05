@@ -12,6 +12,7 @@
     ./neovim.nix
     ./gtk.nix
     ./idle-lock.nix
+    ./wayvnc.nix
   ];
 
   home.stateVersion = "24.11";

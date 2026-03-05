@@ -1,0 +1,49 @@
+# hecatOS Plymouth boot script
+# Displays centered logo with a minimal progress bar below it.
+
+# ── Background ───────────────────────────────────────────────────────────────
+Window.SetBackgroundTopColor(0.06, 0.06, 0.10);     # #10101a
+Window.SetBackgroundBottomColor(0.04, 0.04, 0.07);  # #0a0a12
+
+# ── Logo ─────────────────────────────────────────────────────────────────────
+logo.image = Image("logo.png");
+logo.sprite = Sprite(logo.image);
+logo.sprite.SetX(Window.GetWidth() / 2 - logo.image.GetWidth() / 2);
+logo.sprite.SetY(Window.GetHeight() / 2 - logo.image.GetHeight() / 2 - 40);
+logo.sprite.SetOpacity(1);
+
+# ── Progress bar ─────────────────────────────────────────────────────────────
+bar_width = 300;
+bar_height = 4;
+bar_x = Window.GetWidth() / 2 - bar_width / 2;
+bar_y = Window.GetHeight() / 2 + logo.image.GetHeight() / 2 + 20;
+
+# Track background (dark)
+bar_bg = Image(bar_width, bar_height);
+bar_bg.DrawRect(0, 0, bar_width, bar_height, 0.15, 0.15, 0.20, 1);  # #262630
+bar_bg_sprite = Sprite(bar_bg);
+bar_bg_sprite.SetPosition(bar_x, bar_y, 0);
+
+# Progress fill (accent orange)
+fun refresh_callback() {
+    progress = Plymouth.GetProgress();
+    fill_width = Math.Int(bar_width * progress);
+    if (fill_width > 0) {
+        bar_fill = Image(fill_width, bar_height);
+        bar_fill.DrawRect(0, 0, fill_width, bar_height, 0.96, 0.55, 0.15, 1);  # #f58c26
+        bar_fill_sprite = Sprite(bar_fill);
+        bar_fill_sprite.SetPosition(bar_x, bar_y, 1);
+    }
+}
+
+Plymouth.SetRefreshFunction(refresh_callback);
+
+# ── Hide messages/prompts ────────────────────────────────────────────────────
+fun message_callback(text) { }
+Plymouth.SetMessageFunction(message_callback);
+
+fun display_question_callback(prompt, entry) { }
+Plymouth.SetDisplayQuestionFunction(display_question_callback);
+
+fun display_password_callback(prompt, bullets) { }
+Plymouth.SetDisplayPasswordFunction(display_password_callback);

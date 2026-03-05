@@ -1,4 +1,4 @@
-name: Build HecateOS
+name: Build hecatOS
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  build-iso:
+  build-live-iso:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -30,68 +30,130 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
           df -h /
 
-      - name: Build HecateOS ISO
+      - name: Build hecatOS Live ISO
         run: nix build .#iso --out-link result
 
       - name: Rename ISO
         run: |
           iso_file=$(find result/iso -name '*.iso' | head -1)
           version="${GITHUB_REF_NAME:-dev}"
-          cp "$iso_file" "hecate-os-${version}.iso"
-          sha256sum "hecate-os-${version}.iso" > SHA256SUMS
+          cp "$iso_file" "hecatos-live-${version}.iso"
+          sha256sum "hecatos-live-${version}.iso" >> SHA256SUMS
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hecate-os-iso
+          name: hecatos-live-iso
           path: |
-            hecate-os-*.iso
+            hecatos-live-*.iso
+            SHA256SUMS
+          retention-days: 3
+
+  build-installer-iso:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          nix_path: nixpkgs=channel:nixos-24.11
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h /
+
+      - name: Build hecatOS Installer ISO
+        run: nix build .#installer-iso --out-link result
+
+      - name: Rename ISO
+        run: |
+          iso_file=$(find result/iso -name '*.iso' | head -1)
+          version="${GITHUB_REF_NAME:-dev}"
+          cp "$iso_file" "hecatos-installer-${version}.iso"
+          sha256sum "hecatos-installer-${version}.iso" >> SHA256SUMS
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hecatos-installer-iso
+          path: |
+            hecatos-installer-*.iso
             SHA256SUMS
           retention-days: 3
 
   release:
-    needs: build-iso
+    needs: [build-live-iso, build-installer-iso]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - name: Download ISO
+      - name: Download Live ISO
         uses: actions/download-artifact@v4
         with:
-          name: hecate-os-iso
+          name: hecatos-live-iso
+          path: artifacts/live
+
+      - name: Download Installer ISO
+        uses: actions/download-artifact@v4
+        with:
+          name: hecatos-installer-iso
+          path: artifacts/installer
+
+      - name: Combine checksums
+        run: |
+          cat artifacts/live/SHA256SUMS artifacts/installer/SHA256SUMS > SHA256SUMS
+          cp artifacts/live/hecatos-live-*.iso .
+          cp artifacts/installer/hecatos-installer-*.iso .
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          name: HecateOS ${{ github.ref_name }}
+          name: hecatOS ${{ github.ref_name }}
           draft: false
           prerelease: false
           body: |
-            ## HecateOS ${{ github.ref_name }}
+            ## hecatOS ${{ github.ref_name }}
 
-            Graphical Hyprland live ISO with Hecate daemon pre-installed.
-            Boot from USB into a fully configured developer desktop.
+            Two ISOs are available:
 
-            ### What's included
+            ### Live Desktop ISO (Try + Install)
+            Boot into a full Hyprland desktop. Explore hecatOS, then click "Install hecatOS" when ready.
 
             - **Hyprland** window manager (Tokyo Night theme)
             - **Kitty** terminal, **Zsh** + Starship prompt
             - **Neovim** (LazyVim), **Firefox**, **Waybar**, **Rofi**, **Dunst**
-            - **Developer tools**: bat, eza, fzf, zoxide, lazygit, podman, and more
-            - **Hecate daemon** with firstboot pairing wizard
-            - **Calamares** installer for disk installation
+            - **Developer tools**: bat, eza, fzf, zoxide, lazygit, podman
+            - **Hecate daemon** + **Ollama** pre-loaded
+            - **wayvnc** for remote desktop access (port 5900)
+            - **Super+Shift+I** to launch installer
 
-            ### Roles (chosen during firstboot)
+            ### Installer ISO (Unattended)
+            Headless ISO that auto-detects hardware, selects role, partitions disk, and installs. No interaction needed.
+
+            ### Roles (chosen during install)
 
             | Role | What It Does |
             |------|-------------|
             | **Standalone** | Full stack on one machine |
             | **Cluster** | BEAM cluster member |
             | **Inference** | Ollama-only GPU server |
+            | **Workstation** | Standalone + desktop |
+            | **Desktop** | Full daily-driver desktop |
 
             ### Write to USB
 
             ```bash
-            sudo dd if=hecate-os-${{ github.ref_name }}.iso of=/dev/sdX bs=4M status=progress
+            # Live desktop (Try + Install)
+            sudo dd if=hecatos-live-${{ github.ref_name }}.iso of=/dev/sdX bs=4M status=progress
+
+            # Unattended installer
+            sudo dd if=hecatos-installer-${{ github.ref_name }}.iso of=/dev/sdX bs=4M status=progress
             ```
 
             ### Verify
@@ -100,11 +162,14 @@ jobs:
             sha256sum -c SHA256SUMS
             ```
           files: |
-            hecate-os-*.iso
+            hecatos-live-*.iso
+            hecatos-installer-*.iso
             SHA256SUMS
           generate_release_notes: true
 
-      - name: Delete build artifact
+      - name: Delete build artifacts
         uses: geekyeggo/delete-artifact@v5
         with:
-          name: hecate-os-iso
+          name: |
+            hecatos-live-iso
+            hecatos-installer-iso

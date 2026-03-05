@@ -123,6 +123,7 @@
         "$mainMod, PRINT, exec, grim - | wl-copy"
         "$mainMod CTRL, Q, exec, wlogout"
         "$mainMod CTRL, R, exec, hyprctl reload"
+        "$mainMod SHIFT, I, exec, kitty --title 'hecatOS Installer' -e sudo hecate-install --interactive"
 
         # Workspaces
         "$mainMod, 1, workspace, 1"

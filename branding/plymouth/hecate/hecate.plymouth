@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=hecatOS
+Description=hecatOS boot theme — sigil animation with progress bar
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/hecate
+ScriptFile=/usr/share/plymouth/themes/hecate/hecate.script

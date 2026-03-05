@@ -1,5 +1,5 @@
 {
-  description = "Hecate Node — NixOS configurations for bootable USB/ISO/SD images";
+  description = "hecatOS — NixOS-based distribution for the Hecate mesh";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
@@ -7,9 +7,13 @@
       url = "github:nix-community/home-manager/release-24.11";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, home-manager }:
+  outputs = { self, nixpkgs, home-manager, disko }:
     let
       # Helper to make a NixOS configuration for a given role and hardware
       mkSystem = { role, hardware ? "generic-x86", system ? "x86_64-linux", extraModules ? [ ] }:
@@ -130,24 +134,45 @@
 
       # ── Packages ───────────────────────────────────────────────────────
       packages.x86_64-linux = {
-        # Graphical Hyprland live ISO — boots into full desktop
+        # Branded live desktop ISO — "Try + Install" experience
+        # Boots into full Hyprland desktop with "Install hecatOS" shortcut
         # Use: nix build .#iso
         iso = let
           isoSystem = nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
             modules = [
               home-manager.nixosModules.home-manager
-              ./configurations/desktop.nix
+              ./configurations/live-desktop.nix
               ./hardware/generic-x86.nix
-              "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-graphical-calamares.nix"
+              "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-graphical-base.nix"
               {
-                isoImage.isoBaseName = "hecate-os";
-                isoImage.volumeID = "HECATE_OS";
+                isoImage.isoBaseName = "hecatos-live";
+                isoImage.volumeID = "HECATOS";
+                boot.loader.efi.canTouchEfiVariables = nixpkgs.lib.mkForce false;
+              }
+            ];
+          };
+        in isoSystem.config.system.build.isoImage;
+
+        # Headless unattended installer ISO — plug in, auto-detect, wipe, install
+        # Use: nix build .#installer-iso
+        installer-iso = let
+          isoSystem = nixpkgs.lib.nixosSystem {
+            system = "x86_64-linux";
+            modules = [
+              disko.nixosModules.disko
+              ./configurations/installer.nix
+              ./hardware/generic-x86.nix
+              "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
+              {
+                isoImage.isoBaseName = "hecatos-installer";
+                isoImage.volumeID = "HECATOS_INST";
                 boot.loader.efi.canTouchEfiVariables = nixpkgs.lib.mkForce false;
 
-                # ISO ships with everything; firstboot wizard configures the role
-                services.hecate.firstboot.enable = nixpkgs.lib.mkForce true;
-                services.hecate.ollama.enable = nixpkgs.lib.mkForce true;
+                # Include disko + nixos-install tools
+                environment.systemPackages = let pkgs = pkgsFor "x86_64-linux"; in [
+                  pkgs.nixos-install-tools
+                ];
               }
             ];
           };
@@ -157,6 +182,7 @@
 
         hecate-reconciler = (pkgsFor "x86_64-linux").callPackage ./packages/hecate-reconciler.nix { };
         hecate-cli = (pkgsFor "x86_64-linux").callPackage ./packages/hecate-cli.nix { };
+        hecate-install = (pkgsFor "x86_64-linux").callPackage ./packages/hecate-install-script.nix { };
       };
 
       # ── Checks (NixOS VM tests) ────────────────────────────────────────
@@ -170,6 +196,11 @@
           plugin-test = import ./tests/plugin-test.nix { inherit pkgs; };
           firstboot-test = import ./tests/firstboot-test.nix { inherit pkgs; };
           desktop-test = import ./tests/desktop-test.nix {
+            inherit pkgs;
+            home-manager = home-manager;
+          };
+          installer-test = import ./tests/installer-test.nix { inherit pkgs; };
+          live-desktop-test = import ./tests/live-desktop-test.nix {
             inherit pkgs;
             home-manager = home-manager;
           };

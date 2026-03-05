@@ -15,6 +15,7 @@
     ./desktop/theming.nix
     ./desktop/dev-tools.nix
     ./desktop/optional-apps.nix
+    ./desktop/remote-desktop.nix
   ];
 
   options.services.hecate.desktop = {
@@ -36,6 +37,7 @@
       idle-lock.enable = lib.mkDefault true;
       theming.enable = lib.mkDefault true;
       dev-tools.enable = lib.mkDefault true;
+      remote-desktop.enable = lib.mkDefault false;
     };
   };
 }
