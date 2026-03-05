@@ -47,8 +47,8 @@ in
     enable = lib.mkForce true;
     settings = {
       default_session = {
-        command = "Hyprland";
-        user = cfg.user;
+        command = lib.mkForce "Hyprland";
+        user = lib.mkForce cfg.user;
       };
     };
   };
