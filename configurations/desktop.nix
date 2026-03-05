@@ -38,7 +38,10 @@ in
   networking.useNetworkd = lib.mkForce false;
   systemd.network.enable = lib.mkForce false;
   networking.networkmanager.enable = true;
-  users.users.${cfg.user}.extraGroups = [ "wheel" "podman" "networkmanager" ];
+  users.users.${cfg.user} = {
+    extraGroups = [ "wheel" "podman" "networkmanager" ];
+    shell = pkgs.zsh;
+  };
 
   # ── Audio ─────────────────────────────────────────────────────────────
   services.pipewire = {
@@ -101,6 +104,4 @@ in
   i18n.defaultLocale = lib.mkDefault "en_US.UTF-8";
   time.timeZone = lib.mkDefault "Europe/Brussels";
 
-  # Set the user's default shell to zsh (configured via desktop shell module)
-  users.users.${cfg.user}.shell = pkgs.zsh;
 }

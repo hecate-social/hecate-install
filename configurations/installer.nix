@@ -26,7 +26,7 @@
   services.hecate.secrets.enable = lib.mkForce false;
 
   # Installer hostname
-  networking.hostName = lib.mkDefault "hecatos-installer";
+  networking.hostName = lib.mkForce "hecatos-installer";
 
   # Add tools useful during installation
   environment.systemPackages = with pkgs; [
