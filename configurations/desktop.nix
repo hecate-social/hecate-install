@@ -72,8 +72,8 @@ in
   fonts = {
     enableDefaultPackages = true;
     packages = with pkgs; [
-      pkgs.nerd-fonts.fira-code
-      pkgs.nerd-fonts.jetbrains-mono
+      (pkgs."nerd-fonts".fira-code)
+      (pkgs."nerd-fonts".jetbrains-mono)
       noto-fonts
       noto-fonts-cjk-sans
       noto-fonts-emoji
