@@ -1184,11 +1184,77 @@ RECONCILER
 # Deploy Hecate (Native BEAM)
 # -----------------------------------------------------------------------------
 
+ensure_erlang() {
+    section "Erlang/OTP"
+
+    if command_exists erl; then
+        local otp_ver
+        otp_ver=$(erl -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' 2>/dev/null || echo "unknown")
+        ok "Erlang/OTP ${otp_ver} installed"
+
+        # OTP 27+ required for json module
+        if [ "$otp_ver" != "unknown" ] && [ "$otp_ver" -ge 27 ] 2>/dev/null; then
+            return 0
+        fi
+        warn "OTP ${otp_ver} found but OTP 27+ required"
+    fi
+
+    info "Installing Erlang/OTP 28..."
+
+    local os
+    os=$(detect_os)
+
+    if [ "$os" = "linux" ]; then
+        if command_exists apt-get; then
+            # Erlang Solutions repo for Ubuntu/Debian
+            info "Adding Erlang Solutions repository..."
+            local codename
+            codename=$(lsb_release -cs 2>/dev/null || echo "focal")
+
+            # Download and install the repo package
+            local es_pkg="/tmp/erlang-solutions.deb"
+            curl -fsSL "https://binaries2.erlang-solutions.com/ubuntu/erlang-solutions_2.0_all.deb" -o "${es_pkg}"
+            sudo dpkg -i "${es_pkg}" 2>/dev/null || true
+            rm -f "${es_pkg}"
+
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq esl-erlang || {
+                # Fallback: try the default repo
+                warn "Erlang Solutions package failed, trying default repo..."
+                sudo apt-get install -y -qq erlang
+            }
+        elif command_exists dnf; then
+            sudo dnf install -y erlang
+        elif command_exists pacman; then
+            sudo pacman -S --noconfirm erlang
+        else
+            fatal "Could not detect package manager — install Erlang/OTP 27+ manually"
+        fi
+    elif [ "$os" = "darwin" ]; then
+        if command_exists brew; then
+            brew install erlang
+        else
+            fatal "Homebrew required to install Erlang on macOS"
+        fi
+    fi
+
+    if ! command_exists erl; then
+        fatal "Erlang installation failed. Install OTP 27+ manually."
+    fi
+
+    local otp_ver
+    otp_ver=$(erl -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' 2>/dev/null)
+    ok "Erlang/OTP ${otp_ver} installed"
+}
+
 deploy_native() {
     section "Deploying Hecate (Native BEAM)"
 
     local release_dir="${HOME}/hecate"
     local release_version=""
+
+    # Ensure Erlang is installed (release uses system ERTS)
+    ensure_erlang
 
     # Configure LLM secrets
     setup_llm_secrets
