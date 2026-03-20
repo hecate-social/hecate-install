@@ -31,6 +31,7 @@ HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:latest"
 # Flags
 HEADLESS=false
 DAEMON_ONLY=false
+NATIVE=false
 
 # Node role (overridable via env for headless deploys)
 NODE_ROLE="${HECATE_NODE_ROLE:-standalone}"  # standalone, cluster, inference
@@ -1180,7 +1181,246 @@ RECONCILER
 }
 
 # -----------------------------------------------------------------------------
-# Deploy Hecate
+# Deploy Hecate (Native BEAM)
+# -----------------------------------------------------------------------------
+
+deploy_native() {
+    section "Deploying Hecate (Native BEAM)"
+
+    local release_dir="${HOME}/hecate"
+    local release_version=""
+
+    # Configure LLM secrets
+    setup_llm_secrets
+
+    # Download release tarball from GitHub releases
+    info "Fetching latest release..."
+    local version
+    version=$(get_latest_release "hecate-daemon")
+    if [ -z "$version" ]; then
+        version="${HECATE_VERSION}"
+        [ "$version" = "latest" ] && version="v0.16.5"
+        warn "Could not detect latest release, using ${version}"
+    fi
+    local ver_num="${version#v}"
+    release_version="${ver_num}"
+
+    local tarball_url="${REPO_BASE}/hecate-daemon/releases/download/${version}/hecate-${ver_num}.tar.gz"
+    local tmpfile
+    tmpfile=$(mktemp)
+
+    info "Downloading hecate-daemon ${version}..."
+    if ! curl -fsSL "${tarball_url}" -o "${tmpfile}"; then
+        warn "Release tarball not available at ${tarball_url}"
+        warn "Building from source or using pre-built tarball"
+
+        # Try alternate naming conventions
+        local alt_url="${REPO_BASE}/hecate-daemon/releases/download/${version}/hecate.tar.gz"
+        if ! curl -fsSL "${alt_url}" -o "${tmpfile}"; then
+            fatal "Could not download release tarball. Upload a release at:"
+            fatal "  ${REPO_BASE}/hecate-daemon/releases"
+        fi
+    fi
+
+    # Stop existing daemon if running
+    if [ -f "${release_dir}/bin/hecate" ]; then
+        info "Stopping existing daemon..."
+        "${release_dir}/bin/hecate" stop 2>/dev/null || true
+        sleep 2
+    fi
+    systemctl --user stop hecate-daemon.service 2>/dev/null || true
+
+    # Extract release
+    info "Extracting to ${release_dir}..."
+    rm -rf "${release_dir}"
+    mkdir -p "${release_dir}"
+    tar -xzf "${tmpfile}" -C "${release_dir}"
+    rm -f "${tmpfile}"
+    ok "Release extracted: ${release_dir}"
+
+    # Detect release version from extracted files
+    if [ -z "${release_version}" ]; then
+        release_version=$(ls "${release_dir}/releases/" | grep -v RELEASES | grep -v start_erl | head -1)
+    fi
+    local vm_args_path="${release_dir}/releases/${release_version}/vm.args"
+    local sys_config_path="${release_dir}/releases/${release_version}/sys.config"
+
+    # Write vm.args with long name for cross-machine clustering
+    local node_host
+    node_host=$(cat /etc/hostname 2>/dev/null || uname -n)
+    # Append .lab if not already present
+    [[ "$node_host" == *.* ]] || node_host="${node_host}.lab"
+
+    cat > "${vm_args_path}" << VMEOF
+## Long name for cross-machine Erlang clustering
+-name hecate@${node_host}
+
+## Cluster cookie
+-setcookie ${CLUSTER_COOKIE:-hecate_cookie}
+
+## Heartbeat management
+-heart
+
+## Interactive code server — required for in-VM plugin loading
+-mode interactive
+
+-smp auto
++A 64
++P 1048576
++Q 65536
++sbt db
++SDio 32
+VMEOF
+    ok "vm.args: hecate@${node_host}, cookie set"
+
+    # Write sys.config
+    local gpu_type="none"
+    [ "$DETECTED_HAS_GPU" = true ] && gpu_type="${DETECTED_GPU_TYPE}"
+
+    cat > "${sys_config_path}" << SYSEOF
+[
+    {hecate, [
+        {api_port, 4444},
+        {api_host, {127, 0, 0, 1}},
+        {data_dir, "${INSTALL_DIR}/hecate-daemon"},
+        {bootstrap, ["https://boot.macula.io:4433"]},
+        {realm, <<"io.macula">>},
+        {gateway_identity, <<"mri:agent:io.macula/hecate-${node_host%%.*}">>},
+        {managed_identities, [
+            <<"mri:agent:io.macula/hecate-${node_host%%.*}">>
+        ]},
+        {hardware, #{
+            ram_gb => ${DETECTED_RAM_GB},
+            cpu_cores => ${DETECTED_CPU_CORES},
+            gpu => <<"${gpu_type}">>,
+            gpu_vram_gb => 0,
+            storage_path => <<"${DETECTED_STORAGE_PATH:-/tmp}">>
+        }}
+    ]},
+    {reckon_db, [
+        {writer_pool_size, 5},
+        {reader_pool_size, 5},
+        {gateway_pool_size, 1}
+    ]},
+    {evoq, [
+        {event_store_adapter, reckon_evoq_adapter},
+        {store_id, default_store},
+        {consistency, eventual}
+    ]},
+    {serve_llm, [
+        {enabled, true},
+        {backend, ollama},
+        {ollama_url, "${OLLAMA_HOST}"},
+        {poll_interval_ms, 300000},
+        {status_interval_ms, 30000}
+    ]},
+    {hecate_api, [{http_port, 4444}]},
+    {manage_alc, [{enabled, true}]},
+    {macula, [
+        {cert_path, "priv/cert.pem"},
+        {key_path, "priv/key.pem"},
+        {tls_mode, development},
+        {health_port, 8180},
+        {quic_port, 9443}
+    ]},
+    {kernel, [
+        {logger_level, info},
+        {logger, [
+            {handler, default, logger_std_h, #{
+                level => info,
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", msg, "\n"]
+                }}
+            }}
+        ]}
+    ]}
+].
+SYSEOF
+    ok "sys.config written"
+
+    # Write env file for reference
+    local env_file="${GITOPS_DIR}/system/hecate-daemon.env"
+    mkdir -p "$(dirname "${env_file}")"
+    cat > "${env_file}" << ENVEOF
+# Hecate Daemon Configuration (native BEAM)
+# Generated by installer on $(date -Iseconds)
+HECATE_SOCKET_PATH=${INSTALL_DIR}/hecate-daemon/sockets/api.sock
+HECATE_MESH_BOOTSTRAP=boot.macula.io:4433
+HECATE_MESH_REALM=io.macula
+HECATE_LLM_ENDPOINT=${OLLAMA_HOST}
+HECATE_RAM_GB=${DETECTED_RAM_GB}
+HECATE_CPU_CORES=${DETECTED_CPU_CORES}
+HECATE_GPU=${gpu_type}
+ENVEOF
+
+    if [ -n "${CLUSTER_COOKIE}" ]; then
+        echo "HECATE_ERLANG_COOKIE=${CLUSTER_COOKIE}" >> "${env_file}"
+    fi
+    if [ -n "${CLUSTER_PEERS}" ]; then
+        echo "HECATE_CLUSTER_PEERS=${CLUSTER_PEERS}" >> "${env_file}"
+    fi
+
+    # Create systemd user service
+    mkdir -p "${SYSTEMD_USER_DIR}"
+    cat > "${SYSTEMD_USER_DIR}/hecate-daemon.service" << SVCEOF
+[Unit]
+Description=Hecate Daemon (native BEAM)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+Environment=HOME=${HOME}
+Environment=HECATE_SOCKET_PATH=${INSTALL_DIR}/hecate-daemon/sockets/api.sock
+EnvironmentFile=${env_file}
+EnvironmentFile=-${INSTALL_DIR}/secrets/llm-providers.env
+ExecStart=${release_dir}/bin/hecate daemon
+ExecStop=${release_dir}/bin/hecate stop
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=120s
+
+[Install]
+WantedBy=default.target
+SVCEOF
+
+    # Enable lingering for user services
+    if command_exists loginctl; then
+        loginctl enable-linger "$(whoami)" 2>/dev/null || true
+    fi
+
+    # Start
+    systemctl --user daemon-reload
+    systemctl --user enable hecate-daemon.service
+    systemctl --user start hecate-daemon.service
+    ok "Daemon service started"
+
+    # Wait for socket
+    info "Waiting for hecate-daemon to start..."
+    local retries=60
+    local socket_path="${INSTALL_DIR}/hecate-daemon/sockets/api.sock"
+    while [ $retries -gt 0 ]; do
+        if [ -S "${socket_path}" ]; then
+            ok "Daemon socket ready at ${socket_path}"
+            break
+        fi
+        retries=$((retries - 1))
+        sleep 2
+    done
+
+    if [ $retries -eq 0 ]; then
+        warn "Daemon socket not ready yet"
+        echo ""
+        echo -e "${CYAN}Troubleshooting:${NC}"
+        echo "  systemctl --user status hecate-daemon"
+        echo "  journalctl --user -u hecate-daemon -f"
+        echo "  ${release_dir}/bin/hecate remote_console"
+        echo ""
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# Deploy Hecate (Container)
 # -----------------------------------------------------------------------------
 
 deploy_hecate() {
@@ -1913,6 +2153,7 @@ show_help() {
     echo "Usage: curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh | bash"
     echo ""
     echo "Options:"
+    echo "  --native          Native BEAM release (no containers, no podman)"
     echo "  --daemon-only     Install daemon without desktop app"
     echo "  --headless        Non-interactive mode (uses env vars for config)"
     echo "  --help            Show this help"
@@ -1940,6 +2181,7 @@ main() {
         case "$arg" in
             --headless) HEADLESS=true ;;
             --daemon-only) DAEMON_ONLY=true ;;
+            --native) NATIVE=true; DAEMON_ONLY=true ;;
             --help|-h) show_help; exit 0 ;;
         esac
     done
@@ -1958,18 +2200,26 @@ main() {
     review_choices
 
     configure_firewall
-    ensure_podman
-    create_directory_layout
-    seed_gitops
-    seed_sidebar_config
-    install_reconciler
-    deploy_hecate
-    setup_ollama
-    install_web
-    install_cli
-    setup_path
 
-    show_summary
+    if [ "$NATIVE" = true ]; then
+        create_directory_layout
+        deploy_native
+        install_cli
+        setup_path
+        show_summary
+    else
+        ensure_podman
+        create_directory_layout
+        seed_gitops
+        seed_sidebar_config
+        install_reconciler
+        deploy_hecate
+        setup_ollama
+        install_web
+        install_cli
+        setup_path
+        show_summary
+    fi
 }
 
 # -----------------------------------------------------------------------------
