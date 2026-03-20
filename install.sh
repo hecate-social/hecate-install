@@ -32,17 +32,17 @@ HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:latest"
 HEADLESS=false
 DAEMON_ONLY=false
 
-# Node role
-NODE_ROLE="standalone"  # standalone, cluster, inference
+# Node role (overridable via env for headless deploys)
+NODE_ROLE="${HECATE_NODE_ROLE:-standalone}"  # standalone, cluster, inference
 
 # Feature roles
 ROLE_WORKSTATION=false
 ROLE_SERVICES=false
 ROLE_AI=false
 
-# Cluster join
-CLUSTER_COOKIE=""
-CLUSTER_PEERS=""
+# Cluster join (overridable via env for headless deploys)
+CLUSTER_COOKIE="${HECATE_COOKIE:-}"
+CLUSTER_PEERS="${HECATE_CLUSTER_PEERS:-}"
 
 # Hardware detection results
 DETECTED_RAM_GB=0
@@ -469,8 +469,14 @@ select_node_role() {
     echo ""
 
     if [ "$HEADLESS" = true ]; then
-        NODE_ROLE="standalone"
-        info "Headless mode: defaulting to standalone"
+        # NODE_ROLE already set from HECATE_NODE_ROLE env (default: standalone)
+        if [ "$NODE_ROLE" = "cluster" ]; then
+            if [ -z "$CLUSTER_COOKIE" ]; then
+                CLUSTER_COOKIE=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 20)
+                warn "No HECATE_COOKIE set — generated random cookie: ${CLUSTER_COOKIE}"
+            fi
+        fi
+        info "Headless mode: node role = ${NODE_ROLE}"
         return
     fi
 
@@ -512,8 +518,8 @@ select_node_role() {
 # Feature Role Selection
 # -----------------------------------------------------------------------------
 
-# Ollama host (for remote Ollama servers)
-OLLAMA_HOST="http://localhost:11434"
+# Ollama host (overridable via env for headless deploys)
+OLLAMA_HOST="${OLLAMA_HOST:-http://localhost:11434}"
 
 select_feature_roles() {
     section "Feature Selection"
@@ -522,16 +528,15 @@ select_feature_roles() {
     ROLE_WORKSTATION=true
     ROLE_SERVICES=true
 
-    if [ "$DAEMON_ONLY" = true ]; then
+    if [ "$DAEMON_ONLY" = true ] || [ "$HEADLESS" = true ]; then
         ROLE_WORKSTATION=false
         ROLE_SERVICES=true
-        info "Daemon-only mode: services role only"
-        return
-    fi
-
-    if [ "$HEADLESS" = true ]; then
-        info "Headless mode: services only"
-        ROLE_WORKSTATION=false
+        # Respect OLLAMA_HOST env for remote Ollama (skip local install)
+        if [ "$OLLAMA_HOST" != "http://localhost:11434" ]; then
+            ROLE_AI=false
+            info "Remote Ollama: ${OLLAMA_HOST}"
+        fi
+        info "Headless/daemon-only mode: services role only"
         return
     fi
 
@@ -1909,8 +1914,20 @@ show_help() {
     echo ""
     echo "Options:"
     echo "  --daemon-only     Install daemon without desktop app"
-    echo "  --headless        Non-interactive mode"
+    echo "  --headless        Non-interactive mode (uses env vars for config)"
     echo "  --help            Show this help"
+    echo ""
+    echo "Environment variables (for headless/scripted deploys):"
+    echo "  HECATE_NODE_ROLE      Node role: standalone (default), cluster, inference"
+    echo "  HECATE_COOKIE         BEAM cluster cookie (shared secret)"
+    echo "  HECATE_CLUSTER_PEERS  Comma-separated peer hostnames (e.g., beam00.lab,beam01.lab)"
+    echo "  OLLAMA_HOST           Remote Ollama URL (e.g., http://192.168.1.50:11434)"
+    echo "  HECATE_VERSION        Daemon image tag (default: latest)"
+    echo "  HECATE_INSTALL_DIR    Data directory (default: ~/.hecate)"
+    echo ""
+    echo "Example (headless cluster deploy):"
+    echo "  HECATE_NODE_ROLE=cluster HECATE_COOKIE=mysecret HECATE_CLUSTER_PEERS=beam00.lab,beam01.lab \\"
+    echo "    curl -fsSL https://...install.sh | bash -s -- --daemon-only --headless"
     echo ""
 }
 
