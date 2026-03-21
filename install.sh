@@ -45,6 +45,11 @@ ROLE_AI=false
 CLUSTER_COOKIE="${HECATE_COOKIE:-}"
 CLUSTER_PEERS="${HECATE_CLUSTER_PEERS:-}"
 
+# Site join via join code (from admin node)
+JOIN_CODE="${HECATE_JOIN_CODE:-}"
+ADMIN_HOST="${HECATE_ADMIN_HOST:-}"
+ADMIN_PORT="${HECATE_ADMIN_PORT:-4444}"
+
 # Hardware detection results
 DETECTED_RAM_GB=0
 DETECTED_CPU_CORES=0
@@ -126,6 +131,59 @@ get_local_ip() {
     else
         echo "127.0.0.1"
     fi
+}
+
+# -----------------------------------------------------------------------------
+# Join Code Exchange
+# -----------------------------------------------------------------------------
+
+exchange_join_code() {
+    if [ -z "$ADMIN_HOST" ]; then
+        fatal "Join code provided but no --admin host specified"
+    fi
+
+    section "Exchanging Join Code"
+    info "Contacting admin node at ${ADMIN_HOST}:${ADMIN_PORT}..."
+
+    local response
+    response=$(curl -fsSL \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"code\": \"${JOIN_CODE}\"}" \
+        "http://${ADMIN_HOST}:${ADMIN_PORT}/api/site/join" 2>&1) || {
+        fatal "Failed to contact admin node at ${ADMIN_HOST}:${ADMIN_PORT}. Is the daemon running?"
+    }
+
+    # Parse response — extract cookie and site config
+    local ok_field
+    ok_field=$(echo "$response" | grep -o '"ok":true' || true)
+    if [ -z "$ok_field" ]; then
+        local error_msg
+        error_msg=$(echo "$response" | grep -o '"error":"[^"]*"' | sed 's/"error":"//;s/"$//' || echo "unknown error")
+        fatal "Join code rejected: ${error_msg}"
+    fi
+
+    # Extract fields from JSON response
+    CLUSTER_COOKIE=$(echo "$response" | grep -o '"cookie":"[^"]*"' | sed 's/"cookie":"//;s/"$//')
+    local site_id
+    site_id=$(echo "$response" | grep -o '"site_id":"[^"]*"' | sed 's/"site_id":"//;s/"$//')
+    local admin_node
+    admin_node=$(echo "$response" | grep -o '"admin_node":"[^"]*"' | sed 's/"admin_node":"//;s/"$//')
+
+    if [ -z "$CLUSTER_COOKIE" ]; then
+        fatal "Join code exchange succeeded but no cookie in response"
+    fi
+
+    # Set cluster mode with admin as peer
+    NODE_ROLE="cluster"
+    CLUSTER_PEERS="${admin_node:+$(echo "$admin_node" | sed 's/@/\n/' | tail -1)}"
+    HEADLESS=true  # Skip interactive prompts — we have everything
+
+    ok "Join code accepted!"
+    info "  Site:   ${site_id}"
+    info "  Cookie: ${CLUSTER_COOKIE:0:4}...${CLUSTER_COOKIE: -4}"
+    info "  Admin:  ${admin_node:-unknown}"
+    echo ""
 }
 
 get_latest_release() {
@@ -2243,14 +2301,22 @@ show_help() {
 # -----------------------------------------------------------------------------
 
 main() {
-    for arg in "$@"; do
-        case "$arg" in
+    while [ $# -gt 0 ]; do
+        case "$1" in
             --headless) HEADLESS=true ;;
             --daemon-only) DAEMON_ONLY=true ;;
             --native) NATIVE=true; DAEMON_ONLY=true ;;
+            --join-code) shift; JOIN_CODE="$1" ;;
+            --admin) shift; ADMIN_HOST="$1" ;;
             --help|-h) show_help; exit 0 ;;
         esac
+        shift
     done
+
+    # If join code provided, exchange it for site config before anything else
+    if [ -n "$JOIN_CODE" ]; then
+        exchange_join_code
+    fi
 
     show_banner
     detect_hardware
