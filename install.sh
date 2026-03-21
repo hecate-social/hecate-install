@@ -45,8 +45,9 @@ ROLE_AI=false
 CLUSTER_COOKIE="${HECATE_COOKIE:-}"
 CLUSTER_PEERS="${HECATE_CLUSTER_PEERS:-}"
 
-# Site join via join code (from admin node)
+# Site join
 JOIN_CODE="${HECATE_JOIN_CODE:-}"
+JOIN_TOKEN="${HECATE_JOIN_TOKEN:-}"
 ADMIN_HOST="${HECATE_ADMIN_HOST:-}"
 ADMIN_PORT="${HECATE_ADMIN_PORT:-4444}"
 
@@ -136,6 +137,64 @@ get_local_ip() {
 # -----------------------------------------------------------------------------
 # Join Code Exchange
 # -----------------------------------------------------------------------------
+
+decode_join_token() {
+    section "Decoding Join Token"
+
+    # Token format: base64(json_payload.hmac_hex)
+    local decoded
+    decoded=$(echo "$JOIN_TOKEN" | base64 -d 2>/dev/null) || fatal "Invalid token: base64 decode failed"
+
+    local payload signature
+    payload="${decoded%%.*}"
+    signature="${decoded#*.}"
+
+    if [ -z "$payload" ] || [ -z "$signature" ]; then
+        fatal "Malformed token"
+    fi
+
+    # Extract fields from JSON payload
+    CLUSTER_COOKIE=$(echo "$payload" | grep -o '"cookie":"[^"]*"' | sed 's/"cookie":"//;s/"$//')
+    local site_id admin_host realm
+    site_id=$(echo "$payload" | grep -o '"site_id":"[^"]*"' | sed 's/"site_id":"//;s/"$//')
+    admin_host=$(echo "$payload" | grep -o '"admin_host":"[^"]*"' | sed 's/"admin_host":"//;s/"$//')
+    realm=$(echo "$payload" | grep -o '"realm":"[^"]*"' | sed 's/"realm":"//;s/"$//')
+    local expires_at
+    expires_at=$(echo "$payload" | grep -o '"expires_at":[0-9]*' | sed 's/"expires_at"://')
+
+    if [ -z "$CLUSTER_COOKIE" ]; then
+        fatal "Token missing cookie"
+    fi
+
+    # Check expiry
+    local now
+    now=$(date +%s)
+    if [ -n "$expires_at" ] && [ "$now" -gt "$expires_at" ]; then
+        fatal "Token expired (expired at $(date -d @"$expires_at" 2>/dev/null || echo "$expires_at"))"
+    fi
+
+    # Verify HMAC signature
+    local expected_sig
+    expected_sig=$(echo -n "$payload" | openssl dgst -sha256 -hmac "$CLUSTER_COOKIE" -hex 2>/dev/null | awk '{print $NF}')
+    expected_sig=$(echo "$expected_sig" | tr '[:lower:]' '[:upper:]')
+    signature=$(echo "$signature" | tr '[:lower:]' '[:upper:]')
+
+    if [ "$expected_sig" != "$signature" ]; then
+        fatal "Token signature verification failed — token may be corrupted"
+    fi
+
+    # Set cluster mode
+    NODE_ROLE="cluster"
+    CLUSTER_PEERS="${admin_host:-}"
+    HEADLESS=true
+
+    ok "Token verified!"
+    info "  Site:   ${site_id}"
+    info "  Cookie: ${CLUSTER_COOKIE:0:4}...${CLUSTER_COOKIE: -4}"
+    info "  Peers:  ${CLUSTER_PEERS:-none}"
+    info "  Realm:  ${realm:-default}"
+    echo ""
+}
 
 exchange_join_code() {
     if [ -z "$ADMIN_HOST" ]; then
@@ -2307,14 +2366,18 @@ main() {
             --daemon-only) DAEMON_ONLY=true ;;
             --native) NATIVE=true; DAEMON_ONLY=true ;;
             --join-code) shift; JOIN_CODE="$1" ;;
+            --join-token) shift; JOIN_TOKEN="$1" ;;
             --admin) shift; ADMIN_HOST="$1" ;;
             --help|-h) show_help; exit 0 ;;
         esac
         shift
     done
 
-    # If join code provided, exchange it for site config before anything else
-    if [ -n "$JOIN_CODE" ]; then
+    # If join token provided, decode it locally (no network call needed)
+    if [ -n "${JOIN_TOKEN:-}" ]; then
+        decode_join_token
+    # If join code + admin provided, exchange via API (legacy)
+    elif [ -n "${JOIN_CODE:-}" ]; then
         exchange_join_code
     fi
 
