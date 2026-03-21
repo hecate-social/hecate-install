@@ -358,6 +358,12 @@ detect_hardware() {
 # -----------------------------------------------------------------------------
 
 configure_firewall() {
+    if [ "$HEADLESS" = true ]; then
+        info "Skipping firewall configuration in headless mode"
+        info "Run manually later: sudo ufw allow 4433/udp && sudo ufw allow 4369/tcp && sudo ufw allow 9100/tcp"
+        return
+    fi
+
     section "Firewall Configuration"
 
     echo -e "${BOLD}Hecate needs these ports open for mesh networking:${NC}"
