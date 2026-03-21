@@ -145,9 +145,10 @@ decode_join_token() {
     local decoded
     decoded=$(echo "$JOIN_TOKEN" | base64 -d 2>/dev/null) || fatal "Invalid token: base64 decode failed"
 
+    # Split on LAST dot — payload contains dots in hostnames/URLs
     local payload signature
-    payload="${decoded%%.*}"
-    signature="${decoded#*.}"
+    payload="${decoded%.*}"
+    signature="${decoded##*.}"
 
     if [ -z "$payload" ] || [ -z "$signature" ]; then
         fatal "Malformed token"
