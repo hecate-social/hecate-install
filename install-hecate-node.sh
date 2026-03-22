@@ -35,6 +35,7 @@ NODE_HOST=""
 
 TOTAL_STEPS=8
 CURRENT_STEP=0
+USE_QUADLET=false  # Detected in ensure_podman (requires podman >= 4.4)
 
 # Hardware detection
 DETECTED_RAM_GB=0
@@ -263,6 +264,20 @@ ensure_podman() {
         ok "podman installed"
     fi
 
+    # Detect Quadlet support (podman >= 4.4)
+    local podman_version
+    podman_version=$(podman --version 2>/dev/null | awk '{print $3}')
+    local major minor
+    major=$(echo "$podman_version" | cut -d. -f1)
+    minor=$(echo "$podman_version" | cut -d. -f2)
+    if [ "${major:-0}" -gt 4 ] || { [ "${major:-0}" -eq 4 ] && [ "${minor:-0}" -ge 4 ]; }; then
+        USE_QUADLET=true
+        ok "Quadlet supported (podman ${podman_version})"
+    else
+        USE_QUADLET=false
+        info "Podman ${podman_version} — using legacy systemd service (Quadlet needs 4.4+)"
+    fi
+
     # Enable lingering so user services survive logout
     if command_exists loginctl; then
         loginctl enable-linger "$(whoami)" 2>/dev/null || true
@@ -440,6 +455,12 @@ EOF
 
 install_reconciler() {
     step "Setting up reconciler"
+
+    if [ "$USE_QUADLET" = false ]; then
+        info "Skipping reconciler (not needed without Quadlet)"
+        info "Daemon managed directly via systemd service"
+        return
+    fi
 
     if [ ! -x "${BIN_DIR}/hecate-reconciler" ]; then
         info "Creating embedded reconciler..."
@@ -632,6 +653,69 @@ RECONCILER
 # Step 8: Deploy + Verify
 # -----------------------------------------------------------------------------
 
+deploy_via_quadlet() {
+    info "Using Quadlet (podman 4.4+)..."
+
+    # Run reconciler to link Quadlet files
+    info "Running reconciler..."
+    "${BIN_DIR}/hecate-reconciler" --once 2>&1 | sed 's/^/    /'
+
+    systemctl --user daemon-reload
+
+    info "Starting hecate-daemon service..."
+    systemctl --user restart hecate-daemon.service 2>/dev/null || \
+        systemctl --user start hecate-daemon.service 2>/dev/null || true
+
+    systemctl --user restart hecate-reconciler.service 2>/dev/null || \
+        systemctl --user start hecate-reconciler.service 2>/dev/null || true
+}
+
+deploy_via_systemd() {
+    info "Creating systemd service (legacy podman)..."
+
+    local env_file="${GITOPS_DIR}/system/hecate-daemon.env"
+    local secrets_file="${INSTALL_DIR}/secrets/llm-providers.env"
+    local data_dir="${INSTALL_DIR}/hecate-daemon"
+    local podman_bin
+    podman_bin=$(command -v podman)
+
+    cat > "${SYSTEMD_USER_DIR}/hecate-daemon.service" << EOF
+[Unit]
+Description=Hecate Daemon (podman container)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=-${podman_bin} rm -f hecate-daemon
+ExecStart=${podman_bin} run --rm --name hecate-daemon \\
+  --network host \\
+  -e HOME=${HOME} \\
+  -e HECATE_HOSTNAME=$(cat /etc/hostname 2>/dev/null || uname -n) \\
+  -e HECATE_USER=$(whoami) \\
+  --env-file ${env_file} \\
+  --env-file ${secrets_file} \\
+  -v ${data_dir}:${data_dir}:Z \\
+  ${HECATE_IMAGE}
+ExecStop=${podman_bin} stop hecate-daemon
+Restart=always
+RestartSec=10s
+TimeoutStartSec=120s
+
+[Install]
+WantedBy=default.target
+EOF
+
+    ok "Created systemd service"
+
+    systemctl --user daemon-reload
+    systemctl --user enable hecate-daemon.service 2>/dev/null
+
+    info "Starting hecate-daemon service..."
+    systemctl --user restart hecate-daemon.service 2>/dev/null || \
+        systemctl --user start hecate-daemon.service 2>/dev/null || true
+}
+
 deploy_hecate() {
     step "Deploying hecate daemon"
 
@@ -642,21 +726,11 @@ deploy_hecate() {
     echo ""
     ok "Image ready"
 
-    # Run reconciler to link Quadlet files
-    info "Running reconciler..."
-    "${BIN_DIR}/hecate-reconciler" --once 2>&1 | sed 's/^/    /'
-
-    # Reload systemd to pick up Quadlet changes
-    systemctl --user daemon-reload
-
-    # Restart daemon (not just start — ensure it picks up new config)
-    info "Starting hecate-daemon service..."
-    systemctl --user restart hecate-daemon.service 2>/dev/null || \
-        systemctl --user start hecate-daemon.service 2>/dev/null || true
-
-    # Start reconciler service
-    systemctl --user restart hecate-reconciler.service 2>/dev/null || \
-        systemctl --user start hecate-reconciler.service 2>/dev/null || true
+    if [ "$USE_QUADLET" = true ]; then
+        deploy_via_quadlet
+    else
+        deploy_via_systemd
+    fi
 
     # Wait for daemon socket with progress
     info "Waiting for daemon to start..."
