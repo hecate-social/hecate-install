@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 #
 # Hecate Node Uninstaller (systemd + podman)
-# Usage: curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/uninstall.sh | bash
+#
+# Usage:
+#   Interactive: curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/uninstall.sh | bash
+#   Headless:    curl -fsSL ... | bash -s -- --force
 #
 set -euo pipefail
 
@@ -11,8 +14,24 @@ GITOPS_DIR="${INSTALL_DIR}/gitops"
 QUADLET_DIR="${HOME}/.config/containers/systemd"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 
-# Colors
-if [ -t 1 ]; then
+FORCE=false
+
+# Parse args
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --force|-f) FORCE=true ;;
+        --help|-h)
+            echo "Usage: uninstall.sh [--force]"
+            echo ""
+            echo "  --force  Skip all confirmations (for remote/headless uninstall)"
+            exit 0
+            ;;
+    esac
+    shift
+done
+
+# Colors — always enabled when --force (output goes to xterm.js)
+if [ -t 1 ] || [ "$FORCE" = true ]; then
     RED='\033[0;31m'
     GREEN='\033[0;32m'
     YELLOW='\033[0;33m'
@@ -34,6 +53,12 @@ section() { echo ""; echo -e "${MAGENTA}${BOLD}--- $* ---${NC}"; echo ""; }
 confirm() {
     local prompt="$1"
     local default="${2:-n}"
+
+    # --force answers yes to everything
+    if [ "$FORCE" = true ]; then
+        return 0
+    fi
+
     local yn_hint="[y/N]"
     [ "$default" = "y" ] && yn_hint="[Y/n]"
     echo -en "${CYAN}?${NC} ${prompt} ${yn_hint} " > /dev/tty
@@ -45,12 +70,7 @@ confirm() {
 command_exists() { command -v "$1" &>/dev/null; }
 
 echo ""
-echo "    🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺"
-echo ""
-echo -e "    ${RED}${BOLD}🔥🗝️🔥  H E C A T E  🔥🗝️🔥${NC}"
-echo -e "           ${DIM}U N I N S T A L L${NC}"
-echo ""
-echo "    🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺🇪🇺"
+echo -e "  ${RED}${BOLD}Hecate Uninstaller${NC}"
 echo ""
 
 # -----------------------------------------------------------------------------
@@ -206,8 +226,7 @@ if command_exists podman; then
         podman rm -f "${container}" 2>/dev/null || true
     done
 
-    # Remove hecate images (optional)
-    echo ""
+    # Remove hecate images
     if confirm "Remove hecate container images? (frees disk space)" "y"; then
         for image in $(podman images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep 'hecate'); do
             info "Removing image: ${image}"
@@ -271,11 +290,13 @@ fi
 section "Data Directory"
 
 if [ -d "${INSTALL_DIR}" ]; then
-    echo "Contents of ${INSTALL_DIR}:"
-    ls -la "${INSTALL_DIR}" 2>/dev/null || true
-    echo ""
+    if [ "$FORCE" = false ]; then
+        echo "Contents of ${INSTALL_DIR}:"
+        ls -la "${INSTALL_DIR}" 2>/dev/null || true
+        echo ""
+    fi
 
-    if confirm "Delete ${INSTALL_DIR}? ${RED}(includes gitops, secrets, and daemon data)${NC}"; then
+    if confirm "Delete ${INSTALL_DIR}? (includes gitops, secrets, and daemon data)"; then
         if rm -rf "${INSTALL_DIR}" 2>/dev/null; then
             ok "Removed ${INSTALL_DIR}"
         else
@@ -405,7 +426,6 @@ fi
 
 section "Uninstall Complete"
 
-echo -e "${DIM}The goddess has departed. The crossroads await her return.${NC}"
 echo ""
 echo "Removed:"
 [ "$FOUND_RECONCILER" = true ] && echo "  - Reconciler service"
