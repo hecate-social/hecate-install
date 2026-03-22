@@ -26,7 +26,7 @@ SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 REPO_BASE="https://github.com/hecate-social"
 
 # Docker image (GitHub Container Registry)
-HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:latest"
+HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:${HECATE_TAG:-main}"
 
 # Flags
 HEADLESS=false
@@ -897,7 +897,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Container]
-Image=ghcr.io/hecate-social/hecate-daemon:latest
+Image=ghcr.io/hecate-social/hecate-daemon:main
 ContainerName=hecate-daemon
 PodmanArgs=--arch ${arch}
 AutoUpdate=registry
@@ -1542,6 +1542,12 @@ HECATE_RAM_GB=${DETECTED_RAM_GB}
 HECATE_CPU_CORES=${DETECTED_CPU_CORES}
 HECATE_GPU=${gpu_type}
 ENVEOF
+
+    # Long name for Erlang clustering (required for multi-node)
+    local node_host
+    node_host=$(cat /etc/hostname 2>/dev/null || uname -n)
+    [[ "$node_host" == *.* ]] || node_host="${node_host}.lab"
+    echo "HECATE_NODE_NAME=hecate@${node_host}" >> "${env_file}"
 
     if [ -n "${CLUSTER_COOKIE}" ]; then
         echo "HECATE_ERLANG_COOKIE=${CLUSTER_COOKIE}" >> "${env_file}"
