@@ -31,6 +31,10 @@ CLUSTER_COOKIE=""
 CLUSTER_PEERS=""
 SITE_ID=""
 REALM=""
+NODE_HOST=""
+
+TOTAL_STEPS=8
+CURRENT_STEP=0
 
 # Hardware detection
 DETECTED_RAM_GB=0
@@ -52,21 +56,27 @@ NC='\033[0m'
 # Helpers
 # -----------------------------------------------------------------------------
 
-info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
-ok()      { echo -e "${GREEN}[OK]${NC} $*"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
-error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+info()    { echo -e "  ${BLUE}>${NC} $*"; }
+ok()      { echo -e "  ${GREEN}✓${NC} $*"; }
+warn()    { echo -e "  ${YELLOW}!${NC} $*"; }
+error()   { echo -e "  ${RED}✗${NC} $*" >&2; }
 fatal()   { error "$@"; exit 1; }
-section() { echo ""; echo -e "${MAGENTA}${BOLD}--- $* ---${NC}"; echo ""; }
+
+step() {
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    echo ""
+    echo -e "${MAGENTA}${BOLD}[${CURRENT_STEP}/${TOTAL_STEPS}] $*${NC}"
+    echo ""
+}
 
 command_exists() { command -v "$1" &>/dev/null; }
 
 # -----------------------------------------------------------------------------
-# Token Decode
+# Step 1: Token Decode
 # -----------------------------------------------------------------------------
 
 decode_join_token() {
-    section "Decoding Join Token"
+    step "Decoding join token"
 
     local decoded
     decoded=$(echo "$JOIN_TOKEN" | base64 -d 2>/dev/null) || fatal "Invalid token: base64 decode failed"
@@ -92,7 +102,7 @@ decode_join_token() {
     local now
     now=$(date +%s)
     if [ -n "$expires_at" ] && [ "$now" -gt "$expires_at" ]; then
-        fatal "Token expired"
+        fatal "Token expired at $(date -d @"$expires_at" 2>/dev/null || echo "$expires_at")"
     fi
 
     # Verify HMAC
@@ -101,21 +111,21 @@ decode_join_token() {
     expected_sig=$(echo "$expected_sig" | tr '[:lower:]' '[:upper:]')
     signature=$(echo "$signature" | tr '[:lower:]' '[:upper:]')
 
-    [ "$expected_sig" = "$signature" ] || fatal "Token signature mismatch"
+    [ "$expected_sig" = "$signature" ] || fatal "Token signature mismatch — corrupted?"
 
-    ok "Token verified"
-    info "  Site:   ${SITE_ID}"
-    info "  Cookie: ${CLUSTER_COOKIE:0:4}...${CLUSTER_COOKIE: -4}"
-    info "  Peers:  ${CLUSTER_PEERS:-none}"
-    info "  Realm:  ${REALM:-default}"
+    ok "Token signature valid"
+    info "Site:   ${SITE_ID}"
+    info "Cookie: ${CLUSTER_COOKIE:0:4}...${CLUSTER_COOKIE: -4}"
+    info "Peers:  ${CLUSTER_PEERS:-none}"
+    info "Realm:  ${REALM:-default}"
 }
 
 # -----------------------------------------------------------------------------
-# Hardware Detection
+# Step 2: Hardware Detection
 # -----------------------------------------------------------------------------
 
 detect_hardware() {
-    section "Detecting Hardware"
+    step "Detecting hardware"
 
     DETECTED_RAM_GB=$(awk '/MemTotal/ {printf "%.0f", $2/1024/1024}' /proc/meminfo 2>/dev/null || echo "0")
     DETECTED_CPU_CORES=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo "1")
@@ -127,30 +137,34 @@ detect_hardware() {
         DETECTED_GPU_TYPE="amd"
     fi
 
-    info "RAM: ${DETECTED_RAM_GB} GB  |  CPU: ${DETECTED_CPU_CORES} cores  |  GPU: ${DETECTED_GPU_TYPE}"
+    # Node hostname
+    NODE_HOST=$(cat /etc/hostname 2>/dev/null || uname -n)
+    [[ "$NODE_HOST" == *.* ]] || NODE_HOST="${NODE_HOST}.lab"
+
+    ok "Host:    ${NODE_HOST}"
+    ok "RAM:     ${DETECTED_RAM_GB} GB"
+    ok "CPU:     ${DETECTED_CPU_CORES} cores"
+    ok "GPU:     ${DETECTED_GPU_TYPE}"
 }
 
 # -----------------------------------------------------------------------------
-# Firewall
+# Step 3: Firewall
 # -----------------------------------------------------------------------------
 
 configure_firewall() {
-    section "Firewall Configuration"
+    step "Configuring firewall"
 
-    info "Cluster nodes need these ports:"
-    echo -e "  ${CYAN}4433/udp${NC}  Macula mesh (QUIC)"
-    echo -e "  ${CYAN}4369/tcp${NC}  EPMD (Erlang node discovery)"
-    echo -e "  ${CYAN}9100/tcp${NC}  Erlang distribution"
-    echo -e "  ${CYAN}22/tcp${NC}    SSH"
-    echo ""
+    info "Cluster ports needed: 4433/udp (mesh), 4369/tcp (EPMD), 9100/tcp (dist), 22/tcp (SSH)"
 
     local fw_tool=""
 
     if command_exists ufw; then
-        if sudo ufw status 2>/dev/null | grep -q "Status: active"; then
+        local ufw_status
+        ufw_status=$(sudo ufw status 2>/dev/null || echo "")
+        if echo "$ufw_status" | grep -q "Status: active"; then
             fw_tool="ufw"
-        elif sudo ufw status 2>/dev/null | grep -q "Status: inactive"; then
-            info "ufw installed but inactive — no changes needed"
+        elif echo "$ufw_status" | grep -q "Status: inactive"; then
+            ok "Firewall (ufw) installed but inactive — ports are open"
             return
         fi
     fi
@@ -165,7 +179,7 @@ configure_firewall() {
         if sudo nft list ruleset 2>/dev/null | grep -q "table"; then
             fw_tool="nftables"
         else
-            info "nftables installed but no rules — no changes needed"
+            ok "Firewall (nftables) installed but no rules — ports are open"
             return
         fi
     fi
@@ -179,40 +193,41 @@ configure_firewall() {
     fi
 
     if [ -z "$fw_tool" ]; then
-        ok "No active firewall detected — ports are open by default"
+        ok "No firewall detected — all ports are open"
         return
     fi
 
-    info "Active firewall: ${fw_tool} — opening cluster ports..."
+    info "Active firewall: ${fw_tool}"
+    info "Opening cluster ports..."
 
     case "$fw_tool" in
         ufw)
-            sudo ufw allow ssh
-            sudo ufw allow 4433/udp comment 'Macula mesh'
-            sudo ufw allow 4369/tcp comment 'EPMD'
-            sudo ufw allow 9100/tcp comment 'Erlang dist'
+            sudo ufw allow ssh 2>&1 | sed 's/^/    /'
+            sudo ufw allow 4433/udp comment 'Macula mesh' 2>&1 | sed 's/^/    /'
+            sudo ufw allow 4369/tcp comment 'EPMD' 2>&1 | sed 's/^/    /'
+            sudo ufw allow 9100/tcp comment 'Erlang dist' 2>&1 | sed 's/^/    /'
             if ! sudo ufw status | grep -q "Status: active"; then
-                sudo ufw --force enable
+                sudo ufw --force enable 2>&1 | sed 's/^/    /'
             fi
-            sudo ufw reload
+            sudo ufw reload 2>&1 | sed 's/^/    /'
             ;;
         firewalld)
-            sudo firewall-cmd --permanent --add-port=4433/udp
-            sudo firewall-cmd --permanent --add-port=4369/tcp
-            sudo firewall-cmd --permanent --add-port=9100/tcp
-            sudo firewall-cmd --reload
+            sudo firewall-cmd --permanent --add-port=4433/udp 2>&1 | sed 's/^/    /'
+            sudo firewall-cmd --permanent --add-port=4369/tcp 2>&1 | sed 's/^/    /'
+            sudo firewall-cmd --permanent --add-port=9100/tcp 2>&1 | sed 's/^/    /'
+            sudo firewall-cmd --reload 2>&1 | sed 's/^/    /'
             ;;
         nftables)
             sudo nft add table inet hecate 2>/dev/null || true
             sudo nft add chain inet hecate input '{ type filter hook input priority 0; policy accept; }' 2>/dev/null || true
-            sudo nft add rule inet hecate input udp dport 4433 accept comment \"Macula mesh\"
-            sudo nft add rule inet hecate input tcp dport 4369 accept comment \"EPMD\"
-            sudo nft add rule inet hecate input tcp dport 9100 accept comment \"Erlang dist\"
+            sudo nft add rule inet hecate input udp dport 4433 accept comment \"Macula mesh\" 2>&1 | sed 's/^/    /'
+            sudo nft add rule inet hecate input tcp dport 4369 accept comment \"EPMD\" 2>&1 | sed 's/^/    /'
+            sudo nft add rule inet hecate input tcp dport 9100 accept comment \"Erlang dist\" 2>&1 | sed 's/^/    /'
             ;;
         iptables)
-            sudo iptables -A INPUT -p udp --dport 4433 -j ACCEPT -m comment --comment "Macula mesh"
-            sudo iptables -A INPUT -p tcp --dport 4369 -j ACCEPT -m comment --comment "EPMD"
-            sudo iptables -A INPUT -p tcp --dport 9100 -j ACCEPT -m comment --comment "Erlang dist"
+            sudo iptables -A INPUT -p udp --dport 4433 -j ACCEPT -m comment --comment "Macula mesh" 2>&1 | sed 's/^/    /'
+            sudo iptables -A INPUT -p tcp --dport 4369 -j ACCEPT -m comment --comment "EPMD" 2>&1 | sed 's/^/    /'
+            sudo iptables -A INPUT -p tcp --dport 9100 -j ACCEPT -m comment --comment "Erlang dist" 2>&1 | sed 's/^/    /'
             ;;
     esac
 
@@ -220,26 +235,29 @@ configure_firewall() {
 }
 
 # -----------------------------------------------------------------------------
-# Podman
+# Step 4: Podman
 # -----------------------------------------------------------------------------
 
 ensure_podman() {
-    section "Podman"
+    step "Ensuring podman"
 
     if command_exists podman; then
-        ok "podman already installed: $(podman --version 2>/dev/null | awk '{print $3}')"
+        local version
+        version=$(podman --version 2>/dev/null | awk '{print $3}')
+        ok "podman ${version} already installed"
     else
         info "Installing podman..."
         if command_exists pacman; then
-            sudo pacman -S --noconfirm --needed podman
+            sudo pacman -S --noconfirm --needed podman 2>&1 | tail -5 | sed 's/^/    /'
         elif command_exists apt-get; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq podman
+            sudo apt-get update -qq 2>&1 | tail -2 | sed 's/^/    /'
+            sudo apt-get install -y -qq podman 2>&1 | tail -5 | sed 's/^/    /'
         elif command_exists dnf; then
-            sudo dnf install -y -q podman
+            sudo dnf install -y -q podman 2>&1 | tail -5 | sed 's/^/    /'
         elif command_exists zypper; then
-            sudo zypper install -y podman
+            sudo zypper install -y podman 2>&1 | tail -5 | sed 's/^/    /'
         else
-            fatal "No supported package manager found — install podman manually"
+            fatal "No supported package manager — install podman manually"
         fi
         command_exists podman || fatal "podman installation failed"
         ok "podman installed"
@@ -248,69 +266,94 @@ ensure_podman() {
     # Enable lingering so user services survive logout
     if command_exists loginctl; then
         loginctl enable-linger "$(whoami)" 2>/dev/null || true
+        ok "User lingering enabled (services persist after logout)"
     fi
 }
 
 # -----------------------------------------------------------------------------
-# Directory Layout
+# Step 5: Directory Layout
 # -----------------------------------------------------------------------------
 
 create_directory_layout() {
-    section "Creating Directory Layout"
+    step "Creating directory layout"
 
-    mkdir -p "${INSTALL_DIR}/hecate-daemon/sqlite"
-    mkdir -p "${INSTALL_DIR}/hecate-daemon/reckon-db"
-    mkdir -p "${INSTALL_DIR}/hecate-daemon/sockets"
-    mkdir -p "${INSTALL_DIR}/hecate-daemon/run"
-    mkdir -p "${INSTALL_DIR}/hecate-daemon/connectors"
-    mkdir -p "${INSTALL_DIR}/config"
-    mkdir -p "${INSTALL_DIR}/secrets"
+    local dirs=(
+        "${INSTALL_DIR}/hecate-daemon/sqlite"
+        "${INSTALL_DIR}/hecate-daemon/reckon-db"
+        "${INSTALL_DIR}/hecate-daemon/sockets"
+        "${INSTALL_DIR}/hecate-daemon/run"
+        "${INSTALL_DIR}/hecate-daemon/connectors"
+        "${INSTALL_DIR}/config"
+        "${INSTALL_DIR}/secrets"
+        "${GITOPS_DIR}/system"
+        "${GITOPS_DIR}/apps"
+        "${QUADLET_DIR}"
+        "${SYSTEMD_USER_DIR}"
+        "${BIN_DIR}"
+    )
+
+    for dir in "${dirs[@]}"; do
+        mkdir -p "${dir}"
+    done
     touch "${INSTALL_DIR}/secrets/llm-providers.env"
-    mkdir -p "${GITOPS_DIR}/system"
-    mkdir -p "${GITOPS_DIR}/apps"
-    mkdir -p "${QUADLET_DIR}"
-    mkdir -p "${SYSTEMD_USER_DIR}"
-    mkdir -p "${BIN_DIR}"
 
-    ok "Directory layout: ${INSTALL_DIR}"
+    ok "${INSTALL_DIR}/"
+    info "hecate-daemon/  (sqlite, reckon-db, sockets)"
+    info "gitops/         (system, apps)"
+    info "config/         secrets/"
 }
 
 # -----------------------------------------------------------------------------
-# GitOps + Quadlet
+# Step 6: GitOps + Configuration
 # -----------------------------------------------------------------------------
 
 seed_gitops() {
-    section "Seeding GitOps"
+    step "Configuring node"
 
+    # Stop existing daemon if running (we're about to change its config)
+    if systemctl --user is-active --quiet hecate-daemon.service 2>/dev/null; then
+        info "Stopping existing daemon (will restart with new config)..."
+        systemctl --user stop hecate-daemon.service 2>/dev/null || true
+        ok "Existing daemon stopped"
+    fi
+
+    # Clone gitops repo for Quadlet templates
     local tmpdir
     tmpdir=$(mktemp -d)
     local cloned=false
 
     if command_exists git; then
+        info "Fetching Quadlet templates from hecate-gitops..."
         git clone --depth 1 "${REPO_BASE}/hecate-gitops.git" "${tmpdir}" 2>/dev/null && cloned=true || true
     fi
 
     if [ "$cloned" = true ]; then
-        # Copy system Quadlet files
         if [ -d "${tmpdir}/quadlet/system" ]; then
             cp "${tmpdir}/quadlet/system/"* "${GITOPS_DIR}/system/" 2>/dev/null || true
-            ok "Seeded Quadlet files from hecate-gitops"
+            ok "Quadlet files seeded from hecate-gitops"
         fi
-        # Copy reconciler
         if [ -d "${tmpdir}/reconciler" ]; then
             cp "${tmpdir}/reconciler/hecate-reconciler.sh" "${BIN_DIR}/hecate-reconciler"
             chmod +x "${BIN_DIR}/hecate-reconciler"
             cp "${tmpdir}/reconciler/hecate-reconciler.service" "${SYSTEMD_USER_DIR}/hecate-reconciler.service"
-            ok "Installed reconciler"
+            ok "Reconciler installed"
         fi
         rm -rf "${tmpdir}"
     else
-        warn "Could not clone hecate-gitops — creating embedded defaults"
+        warn "Could not clone hecate-gitops — using embedded defaults"
         rm -rf "${tmpdir}"
         create_default_quadlet
     fi
 
     write_env_config
+
+    # Show the config that was written
+    info "Config: ${GITOPS_DIR}/system/hecate-daemon.env"
+    echo ""
+    echo -e "  ${DIM}HECATE_NODE_NAME=hecate@${NODE_HOST}${NC}"
+    echo -e "  ${DIM}HECATE_ERLANG_COOKIE=${CLUSTER_COOKIE:0:4}...${NC}"
+    echo -e "  ${DIM}HECATE_CLUSTER_PEERS=${CLUSTER_PEERS}${NC}"
+    echo -e "  ${DIM}HECATE_MESH_BOOTSTRAP=boot.macula.io:4433${NC}"
 }
 
 create_default_quadlet() {
@@ -362,11 +405,6 @@ EOF
 write_env_config() {
     local env_file="${GITOPS_DIR}/system/hecate-daemon.env"
 
-    # Determine node name for Erlang clustering
-    local node_host
-    node_host=$(cat /etc/hostname 2>/dev/null || uname -n)
-    [[ "$node_host" == *.* ]] || node_host="${node_host}.lab"
-
     cat > "${env_file}" << EOF
 # Hecate Daemon Configuration (cluster node)
 # Generated by install-hecate-node.sh on $(date -Iseconds)
@@ -388,24 +426,26 @@ HECATE_CPU_CORES=${DETECTED_CPU_CORES}
 HECATE_GPU=${DETECTED_GPU_TYPE}
 
 # BEAM Cluster
-HECATE_NODE_NAME=hecate@${node_host}
+HECATE_NODE_NAME=hecate@${NODE_HOST}
 HECATE_ERLANG_COOKIE=${CLUSTER_COOKIE}
 HECATE_CLUSTER_PEERS=${CLUSTER_PEERS}
 EOF
 
-    ok "Env config written (node: hecate@${node_host})"
+    ok "Env config written"
 }
 
 # -----------------------------------------------------------------------------
-# Reconciler
+# Step 7: Reconciler
 # -----------------------------------------------------------------------------
 
 install_reconciler() {
-    section "Installing Reconciler"
+    step "Setting up reconciler"
 
     if [ ! -x "${BIN_DIR}/hecate-reconciler" ]; then
-        warn "Reconciler not found — creating embedded version"
+        info "Creating embedded reconciler..."
         create_embedded_reconciler
+    else
+        ok "Reconciler already installed"
     fi
 
     # Ensure service file
@@ -429,26 +469,29 @@ Environment=HECATE_GITOPS_DIR=%h/.hecate/gitops
 [Install]
 WantedBy=default.target
 EOF
+        ok "Reconciler service file created"
     fi
 
     # Install inotify-tools for watch mode
     if ! command_exists inotifywait; then
-        info "Installing inotify-tools..."
+        info "Installing inotify-tools (filesystem watcher)..."
         if command_exists pacman; then
-            sudo pacman -S --noconfirm --needed inotify-tools
+            sudo pacman -S --noconfirm --needed inotify-tools 2>&1 | tail -3 | sed 's/^/    /'
         elif command_exists apt-get; then
-            sudo apt-get install -y -qq inotify-tools
+            sudo apt-get install -y -qq inotify-tools 2>&1 | tail -3 | sed 's/^/    /'
         elif command_exists dnf; then
-            sudo dnf install -y -q inotify-tools
+            sudo dnf install -y -q inotify-tools 2>&1 | tail -3 | sed 's/^/    /'
         elif command_exists zypper; then
-            sudo zypper install -y inotify-tools
+            sudo zypper install -y inotify-tools 2>&1 | tail -3 | sed 's/^/    /'
         else
-            warn "Could not install inotify-tools — reconciler will use polling"
+            warn "Could not install inotify-tools — reconciler will poll"
         fi
+    else
+        ok "inotify-tools available"
     fi
 
     systemctl --user daemon-reload
-    systemctl --user enable hecate-reconciler.service
+    systemctl --user enable hecate-reconciler.service 2>/dev/null
     ok "Reconciler enabled"
 }
 
@@ -582,43 +625,131 @@ esac
 RECONCILER
 
     chmod +x "${BIN_DIR}/hecate-reconciler"
-    ok "Created embedded reconciler"
+    ok "Embedded reconciler created"
 }
 
 # -----------------------------------------------------------------------------
-# Deploy
+# Step 8: Deploy + Verify
 # -----------------------------------------------------------------------------
 
 deploy_hecate() {
-    section "Deploying Hecate Daemon"
+    step "Deploying hecate daemon"
 
-    info "Pulling daemon image..."
-    podman pull "${HECATE_IMAGE}"
-    ok "Image ready: ${HECATE_IMAGE}"
+    # Pull image (show progress)
+    info "Pulling ${HECATE_IMAGE}..."
+    echo ""
+    podman pull "${HECATE_IMAGE}" 2>&1 | sed 's/^/    /'
+    echo ""
+    ok "Image ready"
 
-    info "Running initial reconciliation..."
-    "${BIN_DIR}/hecate-reconciler" --once
+    # Run reconciler to link Quadlet files
+    info "Running reconciler..."
+    "${BIN_DIR}/hecate-reconciler" --once 2>&1 | sed 's/^/    /'
 
-    systemctl --user start hecate-reconciler.service
-    ok "Reconciler started"
+    # Reload systemd to pick up Quadlet changes
+    systemctl --user daemon-reload
 
+    # Restart daemon (not just start — ensure it picks up new config)
+    info "Starting hecate-daemon service..."
+    systemctl --user restart hecate-daemon.service 2>/dev/null || \
+        systemctl --user start hecate-daemon.service 2>/dev/null || true
+
+    # Start reconciler service
+    systemctl --user restart hecate-reconciler.service 2>/dev/null || \
+        systemctl --user start hecate-reconciler.service 2>/dev/null || true
+
+    # Wait for daemon socket with progress
     info "Waiting for daemon to start..."
-    local retries=60
     local socket_path="${INSTALL_DIR}/hecate-daemon/sockets/api.sock"
+    local retries=30
+    local dots=""
     while [ $retries -gt 0 ]; do
         if [ -S "${socket_path}" ]; then
-            ok "Daemon socket ready"
+            echo ""
+            ok "Daemon socket ready: ${socket_path}"
             break
         fi
+        dots="${dots}."
+        echo -ne "\r  ${DIM}${dots}${NC}"
         retries=$((retries - 1))
         sleep 2
     done
 
     if [ $retries -eq 0 ]; then
-        warn "Daemon socket not ready yet — check logs:"
-        echo "  systemctl --user status hecate-daemon"
+        echo ""
+        warn "Daemon socket not ready after 60s"
+        echo ""
+        info "Service status:"
+        systemctl --user status hecate-daemon.service --no-pager 2>&1 | head -15 | sed 's/^/    /'
+        echo ""
+        info "Recent logs:"
+        journalctl --user -u hecate-daemon --no-pager -n 20 2>&1 | sed 's/^/    /'
+        echo ""
+        warn "The daemon may still be starting. Check logs with:"
         echo "  journalctl --user -u hecate-daemon -f"
+        return
     fi
+
+    # Post-deploy verification
+    echo ""
+    info "Verifying deployment..."
+
+    # Check systemd status
+    local daemon_status
+    daemon_status=$(systemctl --user is-active hecate-daemon.service 2>/dev/null || echo "unknown")
+    if [ "$daemon_status" = "active" ]; then
+        ok "systemd: hecate-daemon is ${GREEN}active${NC}"
+    else
+        warn "systemd: hecate-daemon is ${daemon_status}"
+    fi
+
+    local reconciler_status
+    reconciler_status=$(systemctl --user is-active hecate-reconciler.service 2>/dev/null || echo "unknown")
+    if [ "$reconciler_status" = "active" ]; then
+        ok "systemd: hecate-reconciler is ${GREEN}active${NC}"
+    else
+        warn "systemd: hecate-reconciler is ${reconciler_status}"
+    fi
+
+    # Check container status
+    local container_status
+    container_status=$(podman ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep hecate-daemon || echo "")
+    if [ -n "$container_status" ]; then
+        ok "container: ${container_status}"
+    else
+        warn "container: hecate-daemon not found in podman ps"
+        info "Podman containers:"
+        podman ps -a --format '{{.Names}} {{.Status}}' 2>&1 | sed 's/^/    /'
+    fi
+
+    # Try health check via API socket
+    if [ -S "${socket_path}" ]; then
+        local health_response
+        health_response=$(curl -s --unix-socket "${socket_path}" http://localhost/api/health 2>/dev/null || echo "")
+        if [ -n "$health_response" ]; then
+            ok "API health: responding"
+            # Extract node_name if available
+            local api_node_name
+            api_node_name=$(echo "$health_response" | grep -o '"node_name":"[^"]*"' | sed 's/"node_name":"//;s/"$//' || echo "")
+            if [ -n "$api_node_name" ]; then
+                ok "Node name: ${api_node_name}"
+            fi
+            # Extract cluster peers if available
+            local api_peers
+            api_peers=$(echo "$health_response" | grep -o '"connected_nodes":\[[^]]*\]' || echo "")
+            if [ -n "$api_peers" ]; then
+                info "Cluster: ${api_peers}"
+            fi
+        else
+            info "API not responding yet (daemon may still be initializing)"
+        fi
+    fi
+
+    # Show a few lines of daemon logs for visibility
+    echo ""
+    info "Recent daemon logs:"
+    journalctl --user -u hecate-daemon --no-pager -n 8 2>&1 | sed 's/^/    /' || \
+        podman logs --tail 8 hecate-daemon 2>&1 | sed 's/^/    /' || true
 }
 
 # -----------------------------------------------------------------------------
@@ -627,15 +758,18 @@ deploy_hecate() {
 
 show_summary() {
     echo ""
-    echo -e "${GREEN}${BOLD}=== Hecate Node Installed ===${NC}"
+    echo -e "${GREEN}${BOLD}============================================${NC}"
+    echo -e "${GREEN}${BOLD}  Hecate node provisioned successfully${NC}"
+    echo -e "${GREEN}${BOLD}============================================${NC}"
     echo ""
-    echo -e "  ${BOLD}Node:${NC}     hecate@$(cat /etc/hostname 2>/dev/null || uname -n)"
-    echo -e "  ${BOLD}Site:${NC}     ${SITE_ID}"
-    echo -e "  ${BOLD}Peers:${NC}    ${CLUSTER_PEERS}"
-    echo -e "  ${BOLD}Data:${NC}     ${INSTALL_DIR}"
+    echo -e "  ${BOLD}Node:${NC}   hecate@${NODE_HOST}"
+    echo -e "  ${BOLD}Site:${NC}   ${SITE_ID}"
+    echo -e "  ${BOLD}Peers:${NC}  ${CLUSTER_PEERS}"
+    echo -e "  ${BOLD}Data:${NC}   ${INSTALL_DIR}"
     echo ""
-    echo -e "  ${DIM}Manage:${NC}   systemctl --user status hecate-daemon"
-    echo -e "  ${DIM}Logs:${NC}     journalctl --user -u hecate-daemon -f"
+    echo -e "  ${DIM}Status:${NC}  systemctl --user status hecate-daemon"
+    echo -e "  ${DIM}Logs:${NC}    journalctl --user -u hecate-daemon -f"
+    echo -e "  ${DIM}Remove:${NC}  curl -fsSL .../uninstall.sh | bash -s -- --force"
     echo ""
 }
 
@@ -662,7 +796,7 @@ main() {
 
     echo ""
     echo -e "${MAGENTA}${BOLD}  Hecate Node Provisioner${NC}"
-    echo -e "  ${DIM}Joining cluster via token${NC}"
+    echo -e "  ${DIM}Joining cluster via token · $(date '+%H:%M:%S')${NC}"
     echo ""
 
     decode_join_token
