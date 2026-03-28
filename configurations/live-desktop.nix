@@ -42,6 +42,18 @@ in
     Keywords=install;setup;
   '';
 
+  environment.etc."applications/hecatos-install-recorded.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=Install hecatOS (Recorded)
+    Comment=Install hecatOS to disk and record the process to MP4
+    Exec=kitty --title "hecatOS Installer (Recording)" -e sudo hecate-install --interactive --record
+    Icon=system-software-install
+    Terminal=false
+    Categories=System;
+    Keywords=install;setup;record;
+  '';
+
   # ── Auto-login (no greeter for live ISO) ─────────────────────────────────
   services.greetd = {
     enable = lib.mkForce true;

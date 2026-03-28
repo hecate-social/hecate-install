@@ -18,6 +18,9 @@ FLAKE_SOURCE="/etc/hecate-install"
 MODE="interactive"   # unattended | interactive
 CONFIG_FILE=""
 COUNTDOWN_SECS=10
+RECORD=false
+RECORD_PID=""
+RECORD_FILE=""
 
 # Detected values (populated by detect_* functions)
 DETECTED_CPU_MODEL=""
@@ -84,6 +87,68 @@ show_banner() {
     echo ""
     echo -e "${NC}${DIM}  NixOS-based distribution for the Hecate mesh${NC}"
     echo ""
+}
+
+# ── Screen Recording ────────────────────────────────────────────────────────
+
+start_recording() {
+    [ "$RECORD" = false ] && return
+
+    RECORD_FILE="/tmp/hecatos-install-$(date +%Y%m%d-%H%M%S).mp4"
+
+    if [ -n "$WAYLAND_DISPLAY" ] && command -v wf-recorder &>/dev/null; then
+        # Wayland (live desktop) — record full screen
+        info "Recording installation to ${RECORD_FILE}"
+        wf-recorder -f "$RECORD_FILE" -c h264_vaapi 2>/dev/null &
+        RECORD_PID=$!
+        # Fallback to software encoding if VA-API fails
+        if ! kill -0 "$RECORD_PID" 2>/dev/null; then
+            wf-recorder -f "$RECORD_FILE" 2>/dev/null &
+            RECORD_PID=$!
+        fi
+        ok "Recording started (wf-recorder, PID ${RECORD_PID})"
+    elif command -v ffmpeg &>/dev/null && [ -c /dev/fb0 ]; then
+        # TTY with framebuffer — record via ffmpeg
+        local res
+        res=$(cat /sys/class/graphics/fb0/virtual_size 2>/dev/null | tr ',' 'x' || echo "1920x1080")
+        info "Recording installation to ${RECORD_FILE} (framebuffer ${res})"
+        ffmpeg -y -f fbdev -framerate 10 -i /dev/fb0 \
+            -vf "format=yuv420p" -c:v libx264 -preset ultrafast \
+            "$RECORD_FILE" </dev/null &>/dev/null &
+        RECORD_PID=$!
+        ok "Recording started (ffmpeg fbdev, PID ${RECORD_PID})"
+    else
+        warn "No recording method available (need wf-recorder on Wayland or ffmpeg + /dev/fb0 on TTY)"
+        RECORD=false
+    fi
+}
+
+stop_recording() {
+    [ "$RECORD" = false ] && return
+    [ -z "$RECORD_PID" ] && return
+
+    info "Stopping recording..."
+
+    # wf-recorder and ffmpeg both stop cleanly on SIGINT
+    kill -INT "$RECORD_PID" 2>/dev/null || true
+    wait "$RECORD_PID" 2>/dev/null || true
+    RECORD_PID=""
+
+    if [ -f "$RECORD_FILE" ]; then
+        local size
+        size=$(du -h "$RECORD_FILE" | cut -f1)
+        ok "Recording saved: ${RECORD_FILE} (${size})"
+
+        # Copy to the installed system if available
+        if [ -d /mnt/home ]; then
+            local dest="/mnt/home/${SELECTED_USERNAME}/Videos"
+            mkdir -p "$dest"
+            cp "$RECORD_FILE" "$dest/"
+            ok "Recording copied to installed system: ~/Videos/$(basename "$RECORD_FILE")"
+        fi
+    else
+        warn "Recording file not found"
+    fi
 }
 
 # ── Hardware Detection ───────────────────────────────────────────────────────
@@ -909,6 +974,9 @@ finish_install() {
     echo -e "  ${BOLD}Locale:${NC}    ${SELECTED_LOCALE}"
     echo -e "  ${BOLD}Disk:${NC}      ${SELECTED_DISK}"
     echo ""
+    # Stop recording and copy to installed system
+    stop_recording
+
     echo -e "  ${DIM}The system will reboot in 5 seconds...${NC}"
     echo -e "  ${DIM}Remove the USB drive before the system starts.${NC}"
     echo ""
@@ -983,6 +1051,10 @@ parse_args() {
                 SELECTED_HOSTNAME="$2"
                 shift 2
                 ;;
+            --record|-r)
+                RECORD=true
+                shift
+                ;;
             --keyboard)
                 SELECTED_KEYBOARD="$2"
                 shift 2
@@ -1006,6 +1078,7 @@ parse_args() {
                 echo "  --unattended, -u    No prompts, auto-detect everything (10s countdown)"
                 echo "  --interactive, -i   Confirm role/disk/hostname before wipe (default)"
                 echo "  --config, -c FILE   Load settings from JSON config file"
+                echo "  --record, -r        Record the installation to MP4"
                 echo "  --role ROLE         Pre-set role (standalone|cluster|inference|workstation|desktop)"
                 echo "  --disk DEVICE       Pre-set target disk (e.g., /dev/sda)"
                 echo "  --hostname NAME     Pre-set hostname"
@@ -1049,6 +1122,9 @@ main() {
     fi
 
     show_banner
+
+    # ── Recording (if --record flag set)
+    start_recording
 
     # ── Step 1: Keyboard (so user can type correctly for remaining steps)
     select_keyboard
