@@ -90,53 +90,64 @@
       ];
 
       # ── Keybindings ─────────────────────────────────────────────────
+      "$HYPRSCRIPTS" = "~/.config/hypr/scripts";
+
       bind = [
-        # Applications
-        "$mainMod, Return, exec, kitty"
-        "$mainMod, B, exec, zen-browser || firefox"
-        "$mainMod SHIFT, B, exec, firefox"
-        "$mainMod, E, exec, nautilus"
-        "$mainMod CTRL, E, exec, rofimoji"
-        "$mainMod CTRL, Return, exec, pkill rofi || rofi -show drun -replace -i"
-        "$mainMod, V, exec, cliphist list | rofi -dmenu | cliphist decode | wl-copy"
+        # ── Applications ─────────────────────────────────────────────
+        "$mainMod, Return, exec, kitty"                                          # Terminal
+        "$mainMod, B, exec, zen-browser || firefox"                              # Browser
+        "$mainMod, E, exec, nautilus"                                            # File manager
+        "$mainMod CTRL, E, exec, rofimoji"                                       # Emoji picker
+        "$mainMod CTRL, Return, exec, pkill rofi || rofi -show drun -replace -i" # App launcher
+        "$mainMod, V, exec, cliphist list | rofi -dmenu | cliphist decode | wl-copy" # Clipboard
 
-        # Windows
-        "$mainMod, Q, killactive"
-        "$mainMod, F, fullscreen"
-        "$mainMod, T, togglefloating"
-        "$mainMod, J, togglesplit"
-        "$mainMod, K, swapsplit"
-        "$mainMod, G, togglegroup"
+        # ── Windows ──────────────────────────────────────────────────
+        "$mainMod, Q, killactive"                          # Kill active window
+        "$mainMod, F, fullscreen"                          # Fullscreen
+        "$mainMod, T, togglefloating"                      # Toggle floating
+        "$mainMod SHIFT, T, exec, $HYPRSCRIPTS/toggleallfloat.sh" # Toggle ALL floating
+        "$mainMod, J, togglesplit"                         # Toggle split
+        "$mainMod, K, swapsplit"                           # Swap split
+        "$mainMod, G, togglegroup"                         # Toggle group
 
-        # Focus
+        # ── Focus ────────────────────────────────────────────────────
         "$mainMod, left, movefocus, l"
         "$mainMod, right, movefocus, r"
         "$mainMod, up, movefocus, u"
         "$mainMod, down, movefocus, d"
 
-        # Resize
+        # ── Resize ───────────────────────────────────────────────────
         "$mainMod SHIFT, right, resizeactive, 100 0"
         "$mainMod SHIFT, left, resizeactive, -100 0"
         "$mainMod SHIFT, down, resizeactive, 0 100"
         "$mainMod SHIFT, up, resizeactive, 0 -100"
 
-        # Screenshots
-        "$mainMod SHIFT, S, exec, grim -g \"$(slurp)\" - | wl-copy"
-        "$mainMod, PRINT, exec, grim - | wl-copy"
-        "$mainMod SHIFT, PRINT, exec, grim -g \"$(slurp)\" - | satty --filename -"
-        "$mainMod CTRL, PRINT, exec, wf-recorder -g \"$(slurp)\" -f ~/Videos/recording-$(date +%Y%m%d-%H%M%S).mp4"
+        # ── Screenshots ──────────────────────────────────────────────
+        "$mainMod SHIFT, S, exec, grim -g \"$(slurp)\" - | wl-copy"              # Area → clipboard
+        "$mainMod, PRINT, exec, grim - | wl-copy"                                # Full → clipboard
+        "$mainMod SHIFT, PRINT, exec, grim -g \"$(slurp)\" - | satty --filename -" # Area → annotate
 
-        # Media
-        "$mainMod, M, exec, kitty --title cava -e cava"
+        # ── Screen Recording ─────────────────────────────────────────
+        "$mainMod, R, exec, $HYPRSCRIPTS/toggle-recording.sh"                    # Toggle recording (rofi menu)
 
-        # Utilities
-        "$mainMod SHIFT, C, exec, hyprpicker -a"
-        "$mainMod, C, exec, qalculate-gtk"
-        "$mainMod CTRL, Q, exec, wlogout"
-        "$mainMod CTRL, R, exec, hyprctl reload"
+        # ── Utilities ────────────────────────────────────────────────
+        "$mainMod SHIFT, C, exec, hyprpicker -a"                                 # Color picker
+        "$mainMod, C, exec, qalculate-gtk"                                       # Calculator
+        "$mainMod, Z, exec, kitty --title btop -e btop"                          # System monitor
+        "$mainMod, M, exec, kitty --title cava -e cava"                          # Audio visualizer
+        "$mainMod CTRL, K, exec, $HYPRSCRIPTS/keybindings.sh"                    # Show keybindings
+        "$mainMod CTRL, Q, exec, wlogout"                                        # Logout menu
+        "$mainMod CTRL, R, exec, hyprctl reload"                                 # Reload config
+        "$mainMod SHIFT, A, exec, $HYPRSCRIPTS/toggle-animations.sh"             # Toggle animations
+        "$mainMod ALT, G, exec, $HYPRSCRIPTS/gamemode.sh"                        # Toggle game mode
         "$mainMod SHIFT, I, exec, kitty --title 'hecatOS Installer' -e sudo hecate-install --interactive"
 
-        # Workspaces
+        # ── Waybar ───────────────────────────────────────────────────
+        "$mainMod SHIFT, B, exec, ~/.config/waybar/launch.sh"                    # Reload waybar
+        "$mainMod CTRL, B, exec, ~/.config/waybar/toggle.sh"                     # Toggle waybar
+        "$mainMod CTRL, T, exec, ~/.config/waybar/themeswitcher.sh"              # Waybar themes
+
+        # ── Workspaces ───────────────────────────────────────────────
         "$mainMod, 1, workspace, 1"
         "$mainMod, 2, workspace, 2"
         "$mainMod, 3, workspace, 3"
@@ -159,11 +170,23 @@
         "$mainMod SHIFT, 9, movetoworkspace, 9"
         "$mainMod SHIFT, 0, movetoworkspace, 10"
 
+        # Move ALL windows to workspace
+        "$mainMod CTRL, 1, exec, $HYPRSCRIPTS/moveTo.sh 1"
+        "$mainMod CTRL, 2, exec, $HYPRSCRIPTS/moveTo.sh 2"
+        "$mainMod CTRL, 3, exec, $HYPRSCRIPTS/moveTo.sh 3"
+        "$mainMod CTRL, 4, exec, $HYPRSCRIPTS/moveTo.sh 4"
+        "$mainMod CTRL, 5, exec, $HYPRSCRIPTS/moveTo.sh 5"
+        "$mainMod CTRL, 6, exec, $HYPRSCRIPTS/moveTo.sh 6"
+        "$mainMod CTRL, 7, exec, $HYPRSCRIPTS/moveTo.sh 7"
+        "$mainMod CTRL, 8, exec, $HYPRSCRIPTS/moveTo.sh 8"
+        "$mainMod CTRL, 9, exec, $HYPRSCRIPTS/moveTo.sh 9"
+        "$mainMod CTRL, 0, exec, $HYPRSCRIPTS/moveTo.sh 10"
+
         "$mainMod, Tab, workspace, m+1"
         "$mainMod SHIFT, Tab, workspace, m-1"
         "$mainMod CTRL, down, workspace, empty"
 
-        # Fn keys
+        # ── Fn Keys ──────────────────────────────────────────────────
         ", XF86MonBrightnessUp, exec, brightnessctl -q s +10%"
         ", XF86MonBrightnessDown, exec, brightnessctl -q s 10%-"
         ", XF86AudioRaiseVolume, exec, pactl set-sink-volume @DEFAULT_SINK@ +5%"
@@ -175,6 +198,7 @@
         ", XF86AudioPrev, exec, playerctl previous"
         ", XF86AudioMicMute, exec, pactl set-source-mute @DEFAULT_SOURCE@ toggle"
         ", XF86Lock, exec, hyprlock"
+        ", XF86Calculator, exec, qalculate-gtk"
 
         # Mouse scroll workspaces
         "$mainMod, mouse_down, workspace, e+1"
@@ -187,6 +211,32 @@
         "$mainMod, mouse:273, resizewindow"
       ];
     };
+  };
+
+  # ── Hyprland scripts ──────────────────────────────────────────────────
+  xdg.configFile."hypr/scripts/toggle-recording.sh" = {
+    source = ../dotfiles/hypr/scripts/toggle-recording.sh;
+    executable = true;
+  };
+  xdg.configFile."hypr/scripts/keybindings.sh" = {
+    source = ../dotfiles/hypr/scripts/keybindings.sh;
+    executable = true;
+  };
+  xdg.configFile."hypr/scripts/toggleallfloat.sh" = {
+    source = ../dotfiles/hypr/scripts/toggleallfloat.sh;
+    executable = true;
+  };
+  xdg.configFile."hypr/scripts/gamemode.sh" = {
+    source = ../dotfiles/hypr/scripts/gamemode.sh;
+    executable = true;
+  };
+  xdg.configFile."hypr/scripts/moveTo.sh" = {
+    source = ../dotfiles/hypr/scripts/moveTo.sh;
+    executable = true;
+  };
+  xdg.configFile."hypr/scripts/toggle-animations.sh" = {
+    source = ../dotfiles/hypr/scripts/toggle-animations.sh;
+    executable = true;
   };
 
   # ── Hyprpaper (wallpaper) ─────────────────────────────────────────────
