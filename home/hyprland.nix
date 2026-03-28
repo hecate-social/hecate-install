@@ -90,9 +90,7 @@
       ];
 
       # ── Keybindings ─────────────────────────────────────────────────
-      "$HYPRSCRIPTS" = "~/.config/hypr/scripts";
-
-      bind = [
+      bind = let s = "~/.config/hypr/scripts"; in [
         # ── Applications ─────────────────────────────────────────────
         "$mainMod, Return, exec, kitty"                                          # Terminal
         "$mainMod, B, exec, zen-browser || firefox"                              # Browser
@@ -105,7 +103,7 @@
         "$mainMod, Q, killactive"                          # Kill active window
         "$mainMod, F, fullscreen"                          # Fullscreen
         "$mainMod, T, togglefloating"                      # Toggle floating
-        "$mainMod SHIFT, T, exec, $HYPRSCRIPTS/toggleallfloat.sh" # Toggle ALL floating
+        "$mainMod SHIFT, T, exec, ${s}/toggleallfloat.sh"  # Toggle ALL floating
         "$mainMod, J, togglesplit"                         # Toggle split
         "$mainMod, K, swapsplit"                           # Swap split
         "$mainMod, G, togglegroup"                         # Toggle group
@@ -128,18 +126,18 @@
         "$mainMod SHIFT, PRINT, exec, grim -g \"$(slurp)\" - | satty --filename -" # Area → annotate
 
         # ── Screen Recording ─────────────────────────────────────────
-        "$mainMod, R, exec, $HYPRSCRIPTS/toggle-recording.sh"                    # Toggle recording (rofi menu)
+        "$mainMod, R, exec, ${s}/toggle-recording.sh"                    # Toggle recording (rofi menu)
 
         # ── Utilities ────────────────────────────────────────────────
         "$mainMod SHIFT, C, exec, hyprpicker -a"                                 # Color picker
         "$mainMod, C, exec, qalculate-gtk"                                       # Calculator
         "$mainMod, Z, exec, kitty --title btop -e btop"                          # System monitor
         "$mainMod, M, exec, kitty --title cava -e cava"                          # Audio visualizer
-        "$mainMod CTRL, K, exec, $HYPRSCRIPTS/keybindings.sh"                    # Show keybindings
+        "$mainMod CTRL, K, exec, ${s}/keybindings.sh"                    # Show keybindings
         "$mainMod CTRL, Q, exec, wlogout"                                        # Logout menu
         "$mainMod CTRL, R, exec, hyprctl reload"                                 # Reload config
-        "$mainMod SHIFT, A, exec, $HYPRSCRIPTS/toggle-animations.sh"             # Toggle animations
-        "$mainMod ALT, G, exec, $HYPRSCRIPTS/gamemode.sh"                        # Toggle game mode
+        "$mainMod SHIFT, A, exec, ${s}/toggle-animations.sh"             # Toggle animations
+        "$mainMod ALT, G, exec, ${s}/gamemode.sh"                        # Toggle game mode
         "$mainMod SHIFT, I, exec, kitty --title 'hecatOS Installer' -e sudo hecate-install --interactive"
 
         # ── Waybar ───────────────────────────────────────────────────
@@ -171,16 +169,16 @@
         "$mainMod SHIFT, 0, movetoworkspace, 10"
 
         # Move ALL windows to workspace
-        "$mainMod CTRL, 1, exec, $HYPRSCRIPTS/moveTo.sh 1"
-        "$mainMod CTRL, 2, exec, $HYPRSCRIPTS/moveTo.sh 2"
-        "$mainMod CTRL, 3, exec, $HYPRSCRIPTS/moveTo.sh 3"
-        "$mainMod CTRL, 4, exec, $HYPRSCRIPTS/moveTo.sh 4"
-        "$mainMod CTRL, 5, exec, $HYPRSCRIPTS/moveTo.sh 5"
-        "$mainMod CTRL, 6, exec, $HYPRSCRIPTS/moveTo.sh 6"
-        "$mainMod CTRL, 7, exec, $HYPRSCRIPTS/moveTo.sh 7"
-        "$mainMod CTRL, 8, exec, $HYPRSCRIPTS/moveTo.sh 8"
-        "$mainMod CTRL, 9, exec, $HYPRSCRIPTS/moveTo.sh 9"
-        "$mainMod CTRL, 0, exec, $HYPRSCRIPTS/moveTo.sh 10"
+        "$mainMod CTRL, 1, exec, ${s}/moveTo.sh 1"
+        "$mainMod CTRL, 2, exec, ${s}/moveTo.sh 2"
+        "$mainMod CTRL, 3, exec, ${s}/moveTo.sh 3"
+        "$mainMod CTRL, 4, exec, ${s}/moveTo.sh 4"
+        "$mainMod CTRL, 5, exec, ${s}/moveTo.sh 5"
+        "$mainMod CTRL, 6, exec, ${s}/moveTo.sh 6"
+        "$mainMod CTRL, 7, exec, ${s}/moveTo.sh 7"
+        "$mainMod CTRL, 8, exec, ${s}/moveTo.sh 8"
+        "$mainMod CTRL, 9, exec, ${s}/moveTo.sh 9"
+        "$mainMod CTRL, 0, exec, ${s}/moveTo.sh 10"
 
         "$mainMod, Tab, workspace, m+1"
         "$mainMod SHIFT, Tab, workspace, m-1"
