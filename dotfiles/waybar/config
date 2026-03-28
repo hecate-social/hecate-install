@@ -15,6 +15,7 @@
     "modules-center": [],
 
     "modules-right": [
+        "custom/updates",
         "pulseaudio",
         "bluetooth",
         "network"
@@ -55,7 +56,7 @@
         "tooltip-format": "{controller_alias}\t{controller_address}",
         "tooltip-format-connected": "{controller_alias}\t{controller_address}\n\n{device_enumerate}",
         "tooltip-format-enumerate-connected": "{device_alias}\t{device_address}",
-        "on-click": "blueman-manager"
+        "on-click": "/home/rl/.local/bin/launch-blueman.sh"
     },
 
     "network": {
@@ -66,5 +67,14 @@
         "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr}/{cidr}",
         "tooltip-format-ethernet": "{ifname}\n{ipaddr}/{cidr}",
         "on-click": "nm-connection-editor"
+    },
+
+    "custom/updates": {
+        "format": "󰚰 {}",
+        "interval": 3600,
+        "exec": "checkupdates 2>/dev/null | wc -l",
+        "exec-if": "exit 0",
+        "on-click": "kitty -e bash -c 'sudo pacman -Syu; read -p \"Press enter to close\"'",
+        "signal": 8
     }
 }

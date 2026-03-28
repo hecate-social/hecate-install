@@ -3,79 +3,15 @@ return {
   priority = 1000,
   lazy = false,
   init = function()
-    -- Define Christmas-themed highlight groups
-    vim.api.nvim_set_hl(0, "DashboardSnow", { fg = "#89dceb" })      -- Cyan snowflakes
-    vim.api.nvim_set_hl(0, "DashboardBeam", { fg = "#7aa2f7" })      -- Blue BEAM
-    vim.api.nvim_set_hl(0, "DashboardCampus", { fg = "#9ece6a" })    -- Green CAMPUS
-    vim.api.nvim_set_hl(0, "DashboardChristmas", { fg = "#f7768e" }) -- Red Christmas greeting
-    vim.api.nvim_set_hl(0, "DashboardStar", { fg = "#e0af68" })      -- Gold stars
+    -- Dashboard highlight groups (Tokyo Night palette)
+    vim.api.nvim_set_hl(0, "DashboardBeam", { fg = "#7aa2f7" })    -- Blue BEAM
+    vim.api.nvim_set_hl(0, "DashboardCampus", { fg = "#9ece6a" })  -- Green CAMPUS
+    vim.api.nvim_set_hl(0, "DashboardQuote", { fg = "#bb9af7" })   -- Purple quotes
   end,
   opts = {
     -- Powerful dashboard with startup time optimization
     dashboard = {
-      enabled = false, -- Using alpha-nvim for multi-colored Christmas banner
-      preset = {
-        header = "", -- We use custom sections instead
-      },
-      sections = {
-        -- Snowfall decoration
-        {
-          text = {
-            { "              ❄  *  ❄     ", hl = "DashboardSnow" },
-            { "✨", hl = "DashboardStar" },
-            { "     ❄  *  ❄              \n", hl = "DashboardSnow" },
-            { "         *    ❄    ", hl = "DashboardSnow" },
-            { "🎄    ★    🎄", hl = "DashboardCampus" },
-            { "    ❄    *         \n", hl = "DashboardSnow" },
-            { "    ❄      *      ❄      *      ❄      *      ❄    \n", hl = "DashboardSnow" },
-          },
-          padding = 1,
-          align = "center",
-        },
-        -- BEAM with snow (blue)
-        {
-          text = {
-            { "   ░░░░░░░ ░░░░░░░░ ░░░░░░ ░░░░   ░░░░░   \n", hl = "DashboardSnow" },
-            { "   ██████╗ ███████╗ █████╗ ███╗   ███╗   \n", hl = "DashboardBeam" },
-            { "   ██╔══██╗██╔════╝██╔══██╗████╗ ████║   \n", hl = "DashboardBeam" },
-            { "   ██████╔╝█████╗  ███████║██╔████╔██║   \n", hl = "DashboardBeam" },
-            { "   ██╔══██╗██╔══╝  ██╔══██║██║╚██╔╝██║   \n", hl = "DashboardBeam" },
-            { "   ██████╔╝███████╗██║  ██║██║ ╚═╝ ██║   \n", hl = "DashboardBeam" },
-            { "   ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝   \n", hl = "DashboardBeam" },
-          },
-          padding = 0,
-          align = "center",
-        },
-        -- CAMPUS with snow (green)
-        {
-          text = {
-            { " ░░░░░░░░ ░░░░░░ ░░░░   ░░░░░ ░░░░░░░░ ░░░   ░░░ ░░░░░░░░ \n", hl = "DashboardSnow" },
-            { " ██████╗ █████╗ ███╗   ███╗██████╗ ██╗   ██╗███████╗ \n", hl = "DashboardCampus" },
-            { "██╔════╝██╔══██╗████╗ ████║██╔══██╗██║   ██║██╔════╝ \n", hl = "DashboardCampus" },
-            { "██║     ███████║██╔████╔██║██████╔╝██║   ██║███████╗ \n", hl = "DashboardCampus" },
-            { "██║     ██╔══██║██║╚██╔╝██║██╔═══╝ ██║   ██║╚════██║ \n", hl = "DashboardCampus" },
-            { "╚██████╗██║  ██║██║ ╚═╝ ██║██║     ╚██████╔╝███████║ \n", hl = "DashboardCampus" },
-            { " ╚═════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝      ╚═════╝ ╚══════╝ \n", hl = "DashboardCampus" },
-          },
-          padding = 1,
-          align = "center",
-        },
-        -- Christmas greeting
-        {
-          text = {
-            { "    🎅  ", hl = "DashboardChristmas" },
-            { "M E R R Y   C H R I S T M A S", hl = "DashboardChristmas" },
-            { "  🎅    \n", hl = "DashboardChristmas" },
-            { "       ", hl = "DashboardStar" },
-            { "✨ Happy Holidays & Happy Coding! ✨", hl = "DashboardStar" },
-            { "       \n", hl = "DashboardStar" },
-          },
-          padding = 1,
-          align = "center",
-        },
-        { section = "keys", gap = 1, padding = 1 },
-        { section = "startup" },
-      },
+      enabled = false, -- Using alpha-nvim dashboard instead
     },
 
     -- Beautiful notifications with history

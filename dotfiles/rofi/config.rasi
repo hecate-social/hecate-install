@@ -1,9 +1,51 @@
+/* Minimal rofi configuration */
+
 configuration {
-    modi: "drun,emoji:rofimoji";
-    font: "FiraCode Nerd Font 11";
-    show-icons: true;
+  modi: "drun,emoji:rofimoji";
+    font: "monospace 10";
+    show-icons: false;
     drun-display-format: "{name}";
-    terminal: "kitty";
 }
 
-@theme "tokyo-night"
+* {
+    background-color: #1a1a1a;
+    foreground-color: #ffffff;
+    border-color: #444444;
+    text-color: #ffffff;
+}
+
+window {
+    width: 600px;
+    border: 1px;
+    padding: 0;
+}
+
+mainbox {
+    padding: 10px;
+}
+
+inputbar {
+    spacing: 5px;
+    padding: 5px;
+    border: 0 0 1px 0;
+    children: [prompt, entry];
+}
+
+prompt {
+    text-color: #888888;
+}
+
+listview {
+    lines: 10;
+    padding: 5px 0 0 0;
+}
+
+element {
+    padding: 5px;
+}
+
+element selected {
+    background-color: #333333;
+}
+
+@theme "/usr/share/rofi/themes/Monokai.rasi"

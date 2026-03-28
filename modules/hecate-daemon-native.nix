@@ -4,8 +4,9 @@ let
   cfg = config.services.hecate;
   nativeCfg = cfg.daemonNative;
 
-  # Erlang/OTP 27 (latest stable in nixpkgs 24.11)
-  erlang = pkgs.erlang_27;
+  # OTP 28 — the release was built with ERTS 16.1, nixpkgs has 16.3.
+  # The relx boot script falls back to system ERTS automatically.
+  erlang = pkgs.erlang_28;
 
   # Fetch the release tarball from GitHub
   releaseTarball = pkgs.fetchurl {
@@ -13,7 +14,7 @@ let
     hash = nativeCfg.tarballHash;
   };
 
-  # Unpack the release into a derivation
+  # Unpack the release into /nix/store (immutable)
   hecateDaemon = pkgs.stdenv.mkDerivation {
     pname = "hecate-daemon";
     version = nativeCfg.version;
@@ -22,9 +23,7 @@ let
 
     installPhase = ''
       mkdir -p $out
-      tar xzf $src -C $out --strip-components=1
-      # Remove bundled ERTS — we use the system Erlang
-      rm -rf $out/erts-*
+      tar xzf $src -C $out
     '';
   };
 
@@ -64,16 +63,22 @@ let
     ].
   '';
 
-  # Wrapper script that sets up the environment and delegates to the release
-  hecateWrapper = pkgs.writeShellScript "hecate-daemon-start" ''
-    export ROOTDIR=${hecateDaemon}
-    export BINDIR=${erlang}/lib/erlang/erts-${erlang.version}/bin
-    export EMU=beam
-    export PROGNAME=hecate
+  # Wrapper: copies release to a mutable directory (relx needs to write log/),
+  # injects NixOS-generated config, sources secrets, then delegates to bin/hecate.
+  hecateWrapper = pkgs.writeShellScript "hecate-daemon-wrapper" ''
+    set -euo pipefail
 
-    # Override release config with NixOS-generated files
+    RELEASE_DIR=${dataDir}/hecate-daemon/release
+    RELEASE_STORE=${hecateDaemon}
+
+    # Sync release from Nix store to mutable location (relx writes log/, tmp/)
+    mkdir -p "$RELEASE_DIR"
+    ${pkgs.rsync}/bin/rsync -a --delete "$RELEASE_STORE/" "$RELEASE_DIR/"
+    chmod -R u+w "$RELEASE_DIR"
+
+    # Override config with NixOS-generated files
     export VMARGS_PATH=${vmArgs}
-    export SYS_CONFIG_PATH=${sysConfig}
+    export RELX_CONFIG_PATH=${sysConfig}
 
     # Data directories
     export HECATE_DATA_DIR=${dataDir}/hecate-daemon
@@ -87,7 +92,7 @@ let
       set +a
     fi
 
-    exec ${hecateDaemon}/bin/hecate "$@"
+    exec "$RELEASE_DIR/bin/hecate" "$@"
   '';
 in
 {
@@ -102,20 +107,17 @@ in
 
     tarballHash = lib.mkOption {
       type = lib.types.str;
-      default = lib.fakeSha256;
+      default = "sha256-2TWvqabb/DAbY8N76To5SolBfRQMAJOl1HoBHPEakNg=";
       description = ''
-        SHA256 hash of the release tarball. Update this when changing the version.
-        Run: nix-prefetch-url <tarball-url> to get the hash.
+        SRI hash of the release tarball. Update when changing version.
+        Get it with: nix-prefetch-url --type sha256 <url> | nix hash to-sri --type sha256
       '';
     };
   };
 
   config = lib.mkIf nativeCfg.enable {
-    # Install Erlang system-wide
+    # Erlang on the system PATH (relx boot script uses `command -v erl`)
     environment.systemPackages = [ erlang ];
-
-    # Install the release to /opt/hecate
-    environment.etc."hecate/release".source = hecateDaemon;
 
     # systemd user service for the rl user
     systemd.user.services.hecate-daemon = {
@@ -123,6 +125,8 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       wantedBy = [ "default.target" ];
+
+      path = [ erlang ];
 
       serviceConfig = {
         Type = "exec";

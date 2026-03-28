@@ -29,6 +29,10 @@
 
       # Containers
       lazydocker
+      docker-compose
+
+      # Kubernetes
+      k9s
 
       # System monitoring
       htop

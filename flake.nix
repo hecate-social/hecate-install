@@ -3,6 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     home-manager = {
       url = "github:nix-community/home-manager/release-24.11";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -13,8 +14,13 @@
     };
   };
 
-  outputs = { self, nixpkgs, home-manager, disko }:
+  outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, disko }:
     let
+      # Overlay that pulls erlang_28 from nixpkgs-unstable
+      erlang28Overlay = final: prev: {
+        erlang_28 = (import nixpkgs-unstable { system = prev.system; }).erlang_28;
+      };
+
       # Helper to make a NixOS configuration for a given role and hardware
       mkSystem = { role, hardware ? "generic-x86", system ? "x86_64-linux", extraModules ? [ ] }:
         nixpkgs.lib.nixosSystem {
@@ -67,68 +73,77 @@
           hardware = "generic-x86";
         };
 
-        # ── Beam cluster nodes (specific hardware) ─────────────────────
+        # ── Beam nodes (native Erlang + XFCE + xrdp) ──────────────────
+        # Site A: beam00 + beam01 (cluster with host00.lab)
+        # Site B: beam02 (standalone)
+        # Site C: beam03 (standalone)
+
         beam00 = mkSystem {
-          role = "cluster";
+          role = "beam-native";
           hardware = "beam-node";
-          extraModules = [{
-            networking.hostName = "beam00";
-            services.hecate.cluster = {
-              cookie = "hecate_cluster_secret";
-              peers = [ "beam01.lab" "beam02.lab" "beam03.lab" ];
-            };
-          }];
+          extraModules = [
+            disko.nixosModules.disko
+            ./disko/beam-node-nixos-no-bulk1.nix  # beam00: 1x HDD only
+            { nixpkgs.overlays = [ erlang28Overlay ]; }
+            {
+              networking.hostName = "beam00";
+              services.hecate.cluster = {
+                cookie = "site_a_cluster_cookie";
+                peers = [ "beam01.lab" ];
+              };
+            }
+          ];
         };
 
         beam01 = mkSystem {
-          role = "cluster";
+          role = "beam-native";
           hardware = "beam-node";
-          extraModules = [{
-            networking.hostName = "beam01";
-            services.hecate.cluster = {
-              cookie = "hecate_cluster_secret";
-              peers = [ "beam00.lab" "beam02.lab" "beam03.lab" ];
-            };
-            fileSystems."/bulk1" = {
-              device = "/dev/disk/by-label/bulk1";
-              fsType = "xfs";
-              options = [ "nofail" "x-systemd.device-timeout=10" ];
-            };
-          }];
+          extraModules = [
+            disko.nixosModules.disko
+            ./disko/beam-node-nixos.nix
+            { nixpkgs.overlays = [ erlang28Overlay ]; }
+            {
+              networking.hostName = "beam01";
+              services.hecate.cluster = {
+                cookie = "site_a_cluster_cookie";
+                peers = [ "beam00.lab" ];
+              };
+            }
+          ];
         };
 
         beam02 = mkSystem {
-          role = "cluster";
+          role = "beam-native";
           hardware = "beam-node";
-          extraModules = [{
-            networking.hostName = "beam02";
-            services.hecate.cluster = {
-              cookie = "hecate_cluster_secret";
-              peers = [ "beam00.lab" "beam01.lab" "beam03.lab" ];
-            };
-            fileSystems."/bulk1" = {
-              device = "/dev/disk/by-label/bulk1";
-              fsType = "xfs";
-              options = [ "nofail" "x-systemd.device-timeout=10" ];
-            };
-          }];
+          extraModules = [
+            disko.nixosModules.disko
+            ./disko/beam-node-nixos.nix
+            { nixpkgs.overlays = [ erlang28Overlay ]; }
+            {
+              networking.hostName = "beam02";
+              services.hecate.cluster = {
+                cookie = "site_b_cluster_cookie";
+                peers = [ ];
+              };
+            }
+          ];
         };
 
         beam03 = mkSystem {
-          role = "cluster";
+          role = "beam-native";
           hardware = "beam-node";
-          extraModules = [{
-            networking.hostName = "beam03";
-            services.hecate.cluster = {
-              cookie = "hecate_cluster_secret";
-              peers = [ "beam00.lab" "beam01.lab" "beam02.lab" ];
-            };
-            fileSystems."/bulk1" = {
-              device = "/dev/disk/by-label/bulk1";
-              fsType = "xfs";
-              options = [ "nofail" "x-systemd.device-timeout=10" ];
-            };
-          }];
+          extraModules = [
+            disko.nixosModules.disko
+            ./disko/beam-node-nixos.nix
+            { nixpkgs.overlays = [ erlang28Overlay ]; }
+            {
+              networking.hostName = "beam03";
+              services.hecate.cluster = {
+                cookie = "site_c_cluster_cookie";
+                peers = [ ];
+              };
+            }
+          ];
         };
       };
 

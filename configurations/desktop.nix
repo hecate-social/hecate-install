@@ -14,7 +14,7 @@ in
   services.hecate.user = lib.mkDefault "hecate";
 
   # Desktop hostname
-  networking.hostName = lib.mkDefault "hecate-desktop";
+  networking.hostName = lib.mkOverride 900 "hecate-desktop";
 
   # Desktop doesn't use firstboot wizard — user configures interactively
   services.hecate.firstboot.enable = lib.mkForce false;

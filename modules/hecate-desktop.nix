@@ -37,6 +37,7 @@
       idle-lock.enable = lib.mkDefault true;
       theming.enable = lib.mkDefault true;
       dev-tools.enable = lib.mkDefault true;
+      libreoffice.enable = lib.mkDefault true;
       remote-desktop.enable = lib.mkDefault false;
     };
   };

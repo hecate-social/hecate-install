@@ -23,6 +23,8 @@ window#waybar {
 }
 
 /* Right side modules */
+#custom-test,
+#custom-updates,
 #pulseaudio,
 #bluetooth,
 #network {
@@ -31,6 +33,11 @@ window#waybar {
     padding: 0 5px;
     margin: 0;
     font-size: 11px;
+}
+
+/* Updates - show in yellow when available */
+#custom-updates {
+    color: #e0af68;
 }
 
 /* Pulseaudio */
@@ -66,6 +73,7 @@ window#waybar {
 }
 
 /* Hover effects - subtle */
+#custom-updates:hover,
 #pulseaudio:hover,
 #bluetooth:hover,
 #network:hover {
