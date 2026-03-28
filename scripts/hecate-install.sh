@@ -943,6 +943,12 @@ run_nixos_install() {
         nix_body+="  services.hecate.desktop.laptop.enable = true;"$'\n'
     fi
 
+    # NVIDIA GPU
+    if lspci 2>/dev/null | grep -qi 'nvidia.*vga\|vga.*nvidia'; then
+        info "NVIDIA GPU detected — enabling proprietary driver"
+        nix_body+="  services.hecate.desktop.nvidia.enable = true;"$'\n'
+    fi
+
     cat > "$extra_config" <<NIX
 { lib, pkgs, ... }:
 
