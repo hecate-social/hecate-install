@@ -12,7 +12,7 @@
       monitor = [ ", preferred, auto, 1" ];
 
       input = {
-        kb_layout = "us";
+        kb_layout = "us"; # Overridden at NixOS level via xkb.layout
         kb_options = "caps:escape";
         numlock_by_default = true;
         mouse_refocus = false;
@@ -31,7 +31,7 @@
         gaps_in = 4;
         gaps_out = 8;
         border_size = 2;
-        "col.active_border" = "rgba(7aa2f7ee) rgba(bb9af7ee) 45deg";
+        "col.active_border" = "rgba(f97316ee) rgba(fbbf24ee) 45deg";
         "col.inactive_border" = "rgba(414868aa)";
         layout = "dwindle";
       };
@@ -86,13 +86,15 @@
         "wl-paste --type text --watch cliphist store"
         "wl-paste --type image --watch cliphist store"
         "nm-applet --indicator"
+        "udiskie --automount --notify --tray"
       ];
 
       # ── Keybindings ─────────────────────────────────────────────────
       bind = [
         # Applications
         "$mainMod, Return, exec, kitty"
-        "$mainMod, B, exec, firefox"
+        "$mainMod, B, exec, zen-browser || firefox"
+        "$mainMod SHIFT, B, exec, firefox"
         "$mainMod, E, exec, nautilus"
         "$mainMod CTRL, E, exec, rofimoji"
         "$mainMod CTRL, Return, exec, pkill rofi || rofi -show drun -replace -i"
@@ -118,9 +120,18 @@
         "$mainMod SHIFT, down, resizeactive, 0 100"
         "$mainMod SHIFT, up, resizeactive, 0 -100"
 
-        # Actions
+        # Screenshots
         "$mainMod SHIFT, S, exec, grim -g \"$(slurp)\" - | wl-copy"
         "$mainMod, PRINT, exec, grim - | wl-copy"
+        "$mainMod SHIFT, PRINT, exec, grim -g \"$(slurp)\" - | satty --filename -"
+        "$mainMod CTRL, PRINT, exec, wf-recorder -g \"$(slurp)\" -f ~/Videos/recording-$(date +%Y%m%d-%H%M%S).mp4"
+
+        # Media
+        "$mainMod, M, exec, kitty --title cava -e cava"
+
+        # Utilities
+        "$mainMod SHIFT, C, exec, hyprpicker -a"
+        "$mainMod, C, exec, qalculate-gtk"
         "$mainMod CTRL, Q, exec, wlogout"
         "$mainMod CTRL, R, exec, hyprctl reload"
         "$mainMod SHIFT, I, exec, kitty --title 'hecatOS Installer' -e sudo hecate-install --interactive"

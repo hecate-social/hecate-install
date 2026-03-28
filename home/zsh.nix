@@ -19,12 +19,22 @@
       ls = "eza --icons";
       ll = "eza -la --icons";
       lt = "eza --tree --icons";
+      la = "eza -la --icons --git";
       v = "nvim";
       lg = "lazygit";
       lzd = "lazydocker";
       fm = "yazi";
       du = "ncdu";
       ping = "gping";
+      dig = "doggo";
+      ps = "procs";
+      sed = "sd";
+      cut = "choose";
+      http = "xh";
+      bench = "hyperfine";
+      watch = "viddy";
+      logo = "hecate-logo-select";
+      j = "just";
     };
 
     initExtra = ''
@@ -63,9 +73,9 @@
         [ -n "$branch" ] && git checkout "$branch"
       }
 
-      # Show fastfetch on shell start (only interactive)
-      if [[ $- == *i* ]] && command -v fastfetch &>/dev/null; then
-        fastfetch --logo small
+      # Show fastfetch on shell start (only interactive, not in tmux/zellij)
+      if [[ $- == *i* ]] && [[ -z "''${TMUX:-}" ]] && [[ -z "''${ZELLIJ:-}" ]] && command -v fastfetch &>/dev/null; then
+        fastfetch
       fi
     '';
   };
@@ -74,5 +84,12 @@
   programs.fzf = {
     enable = true;
     enableZshIntegration = true;
+  };
+
+  # direnv — auto-load .envrc per directory
+  programs.direnv = {
+    enable = true;
+    enableZshIntegration = true;
+    nix-direnv.enable = true;
   };
 }

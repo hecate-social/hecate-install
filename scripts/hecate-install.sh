@@ -34,6 +34,14 @@ SELECTED_DISK=""
 SELECTED_HOSTNAME=""
 SELECTED_DISKO_LAYOUT=""
 
+# OOBE values
+SELECTED_KEYBOARD="us"
+SELECTED_TIMEZONE="UTC"
+SELECTED_LOCALE="en_US.UTF-8"
+SELECTED_USERNAME="hecate"
+SELECTED_FULLNAME=""
+SELECTED_PASSWORD=""
+
 # Cluster config (from config file or defaults)
 CLUSTER_COOKIE="hecate_cluster_secret"
 CLUSTER_PEERS=""
@@ -333,6 +341,436 @@ NIX
 
 # ── Confirmation ─────────────────────────────────────────────────────────────
 
+# ── Keyboard Layout ─────────────────────────────────────────────────────────
+
+select_keyboard() {
+    section "Keyboard Layout"
+
+    local layouts=(
+        "us:US English"
+        "gb:UK English"
+        "de:German"
+        "fr:French"
+        "es:Spanish"
+        "it:Italian"
+        "pt:Portuguese"
+        "nl:Dutch"
+        "be:Belgian"
+        "ch:Swiss (German)"
+        "se:Swedish"
+        "no:Norwegian"
+        "dk:Danish"
+        "fi:Finnish"
+        "pl:Polish"
+        "cz:Czech"
+        "hu:Hungarian"
+        "ru:Russian"
+        "jp:Japanese"
+        "kr:Korean"
+        "br:Brazilian Portuguese"
+        "latam:Latin American Spanish"
+    )
+
+    if [ "$MODE" = "unattended" ]; then
+        info "Keyboard: ${SELECTED_KEYBOARD}"
+        return
+    fi
+
+    echo "Select your keyboard layout:"
+    echo ""
+
+    local i=1
+    for entry in "${layouts[@]}"; do
+        IFS=':' read -r code name <<< "$entry"
+        local marker="  "
+        [ "$code" = "us" ] && marker="${GREEN}▸ ${NC}"
+        printf "  ${marker}${BOLD}%2d)${NC} %-6s ${DIM}%s${NC}\n" "$i" "$code" "$name"
+        i=$((i + 1))
+    done
+    echo ""
+    echo -e "  ${BOLD} 0)${NC} Other  ${DIM}(type layout code manually)${NC}"
+    echo ""
+    echo -en "  ${CYAN}?${NC} Choose [1]: "
+    read -r choice
+    choice="${choice:-1}"
+
+    if [ "$choice" = "0" ]; then
+        echo -en "  ${CYAN}?${NC} Layout code (e.g. dvorak, colemak): "
+        read -r SELECTED_KEYBOARD
+    elif [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -le "${#layouts[@]}" ]; then
+        local idx=$((choice - 1))
+        IFS=':' read -r SELECTED_KEYBOARD _ <<< "${layouts[$idx]}"
+    else
+        SELECTED_KEYBOARD="us"
+    fi
+
+    # Apply immediately so the user can type correctly for the rest of the install
+    loadkeys "$SELECTED_KEYBOARD" 2>/dev/null || true
+
+    ok "Keyboard: ${SELECTED_KEYBOARD}"
+}
+
+# ── Wi-Fi Connection ───────────────────────────────────────────────────────
+
+connect_wifi() {
+    # Skip if wired connection is up
+    if ip route get 1.1.1.1 &>/dev/null; then
+        return
+    fi
+
+    # Skip if no wireless interface
+    if ! ls /sys/class/net/wl* &>/dev/null; then
+        return
+    fi
+
+    if [ "$MODE" = "unattended" ]; then
+        warn "No network. Unattended mode cannot configure Wi-Fi."
+        return
+    fi
+
+    section "Wi-Fi Connection"
+
+    echo -e "  ${YELLOW}No wired connection detected.${NC}"
+    echo -e "  ${DIM}Internet is required to download NixOS packages.${NC}"
+    echo ""
+
+    if ! command -v nmcli &>/dev/null; then
+        warn "nmcli not available. Connect Wi-Fi manually or plug in Ethernet."
+        echo ""
+        echo -en "  ${CYAN}?${NC} Press Enter to continue once connected... "
+        read -r _
+        return
+    fi
+
+    # Scan for networks
+    info "Scanning for Wi-Fi networks..."
+    nmcli device wifi rescan 2>/dev/null || true
+    sleep 2
+
+    local networks
+    networks=$(nmcli -t -f SSID,SIGNAL,SECURITY device wifi list 2>/dev/null | grep -v '^$' | sort -t: -k2 -rn | head -15)
+
+    if [ -z "$networks" ]; then
+        warn "No Wi-Fi networks found."
+        echo -en "  ${CYAN}?${NC} Press Enter to continue... "
+        read -r _
+        return
+    fi
+
+    echo ""
+    echo "  Available networks:"
+    echo ""
+    local i=1
+    while IFS=: read -r ssid signal security; do
+        local lock=" "
+        [ -n "$security" ] && [ "$security" != "--" ] && lock="🔒"
+        printf "  ${BOLD}%2d)${NC} %-30s %s%% %s\n" "$i" "$ssid" "$signal" "$lock"
+        i=$((i + 1))
+    done <<< "$networks"
+
+    echo ""
+    echo -e "  ${BOLD} 0)${NC} Skip ${DIM}(continue without Wi-Fi)${NC}"
+    echo ""
+    echo -en "  ${CYAN}?${NC} Connect to [0]: "
+    read -r choice
+    choice="${choice:-0}"
+
+    if [ "$choice" = "0" ]; then
+        return
+    fi
+
+    local selected_ssid
+    selected_ssid=$(echo "$networks" | sed -n "${choice}p" | cut -d: -f1)
+
+    if [ -z "$selected_ssid" ]; then
+        warn "Invalid selection."
+        return
+    fi
+
+    echo -en "  ${CYAN}?${NC} Password for '${selected_ssid}': "
+    read -rs wifi_pass
+    echo ""
+
+    info "Connecting to ${selected_ssid}..."
+    if nmcli device wifi connect "$selected_ssid" password "$wifi_pass" 2>/dev/null; then
+        ok "Connected to ${selected_ssid}"
+    else
+        warn "Connection failed. You may need to connect manually."
+        echo -en "  ${CYAN}?${NC} Press Enter to continue... "
+        read -r _
+    fi
+}
+
+# ── Timezone Selection ─────────────────────────────────────────────────────
+
+select_timezone() {
+    section "Timezone"
+
+    if [ "$MODE" = "unattended" ]; then
+        info "Timezone: ${SELECTED_TIMEZONE}"
+        return
+    fi
+
+    # Common timezones grouped by region
+    local regions=(
+        "Americas"
+        "Europe"
+        "Asia"
+        "Africa"
+        "Oceania"
+        "Other"
+    )
+
+    local tz_americas=(
+        "America/New_York:Eastern (New York)"
+        "America/Chicago:Central (Chicago)"
+        "America/Denver:Mountain (Denver)"
+        "America/Los_Angeles:Pacific (Los Angeles)"
+        "America/Anchorage:Alaska"
+        "Pacific/Honolulu:Hawaii"
+        "America/Toronto:Toronto"
+        "America/Vancouver:Vancouver"
+        "America/Mexico_City:Mexico City"
+        "America/Sao_Paulo:São Paulo"
+        "America/Argentina/Buenos_Aires:Buenos Aires"
+        "America/Bogota:Bogotá"
+        "America/Lima:Lima"
+        "America/Santiago:Santiago"
+    )
+
+    local tz_europe=(
+        "Europe/London:London (GMT/BST)"
+        "Europe/Brussels:Brussels (CET)"
+        "Europe/Amsterdam:Amsterdam (CET)"
+        "Europe/Berlin:Berlin (CET)"
+        "Europe/Paris:Paris (CET)"
+        "Europe/Madrid:Madrid (CET)"
+        "Europe/Rome:Rome (CET)"
+        "Europe/Zurich:Zurich (CET)"
+        "Europe/Vienna:Vienna (CET)"
+        "Europe/Stockholm:Stockholm (CET)"
+        "Europe/Oslo:Oslo (CET)"
+        "Europe/Copenhagen:Copenhagen (CET)"
+        "Europe/Helsinki:Helsinki (EET)"
+        "Europe/Warsaw:Warsaw (CET)"
+        "Europe/Prague:Prague (CET)"
+        "Europe/Budapest:Budapest (CET)"
+        "Europe/Bucharest:Bucharest (EET)"
+        "Europe/Athens:Athens (EET)"
+        "Europe/Moscow:Moscow (MSK)"
+        "Europe/Istanbul:Istanbul (TRT)"
+        "Europe/Lisbon:Lisbon (WET)"
+        "Europe/Dublin:Dublin (GMT/IST)"
+    )
+
+    local tz_asia=(
+        "Asia/Tokyo:Tokyo (JST)"
+        "Asia/Shanghai:Shanghai (CST)"
+        "Asia/Hong_Kong:Hong Kong (HKT)"
+        "Asia/Seoul:Seoul (KST)"
+        "Asia/Taipei:Taipei (CST)"
+        "Asia/Singapore:Singapore (SGT)"
+        "Asia/Kolkata:India (IST)"
+        "Asia/Dubai:Dubai (GST)"
+        "Asia/Bangkok:Bangkok (ICT)"
+        "Asia/Jakarta:Jakarta (WIB)"
+        "Asia/Ho_Chi_Minh:Ho Chi Minh (ICT)"
+        "Asia/Karachi:Karachi (PKT)"
+        "Asia/Tehran:Tehran (IRST)"
+        "Asia/Riyadh:Riyadh (AST)"
+        "Asia/Jerusalem:Jerusalem (IST)"
+    )
+
+    local tz_africa=(
+        "Africa/Cairo:Cairo (EET)"
+        "Africa/Lagos:Lagos (WAT)"
+        "Africa/Nairobi:Nairobi (EAT)"
+        "Africa/Johannesburg:Johannesburg (SAST)"
+        "Africa/Casablanca:Casablanca (WET)"
+        "Africa/Accra:Accra (GMT)"
+    )
+
+    local tz_oceania=(
+        "Australia/Sydney:Sydney (AEST)"
+        "Australia/Melbourne:Melbourne (AEST)"
+        "Australia/Perth:Perth (AWST)"
+        "Australia/Brisbane:Brisbane (AEST)"
+        "Pacific/Auckland:Auckland (NZST)"
+        "Pacific/Fiji:Fiji (FJT)"
+    )
+
+    echo "Select your region:"
+    echo ""
+    local i=1
+    for region in "${regions[@]}"; do
+        echo -e "  ${BOLD}${i})${NC} ${region}"
+        i=$((i + 1))
+    done
+    echo ""
+    echo -en "  ${CYAN}?${NC} Region [2]: "
+    read -r region_choice
+    region_choice="${region_choice:-2}"
+
+    local -n tz_list
+    case "$region_choice" in
+        1) tz_list=tz_americas ;;
+        2) tz_list=tz_europe ;;
+        3) tz_list=tz_asia ;;
+        4) tz_list=tz_africa ;;
+        5) tz_list=tz_oceania ;;
+        6)
+            echo -en "  ${CYAN}?${NC} Timezone (e.g. UTC, Etc/GMT+5): "
+            read -r SELECTED_TIMEZONE
+            SELECTED_TIMEZONE="${SELECTED_TIMEZONE:-UTC}"
+            ok "Timezone: ${SELECTED_TIMEZONE}"
+            return
+            ;;
+        *) tz_list=tz_europe ;;
+    esac
+
+    echo ""
+    i=1
+    for entry in "${tz_list[@]}"; do
+        IFS=':' read -r tz_code tz_name <<< "$entry"
+        printf "  ${BOLD}%2d)${NC} %-35s ${DIM}%s${NC}\n" "$i" "$tz_name" "$tz_code"
+        i=$((i + 1))
+    done
+    echo ""
+    echo -en "  ${CYAN}?${NC} Choose [1]: "
+    read -r tz_choice
+    tz_choice="${tz_choice:-1}"
+
+    if [ "$tz_choice" -ge 1 ] 2>/dev/null && [ "$tz_choice" -le "${#tz_list[@]}" ]; then
+        local idx=$((tz_choice - 1))
+        IFS=':' read -r SELECTED_TIMEZONE _ <<< "${tz_list[$idx]}"
+    else
+        SELECTED_TIMEZONE="UTC"
+    fi
+
+    ok "Timezone: ${SELECTED_TIMEZONE}"
+}
+
+# ── Locale Selection ───────────────────────────────────────────────────────
+
+select_locale() {
+    section "Language & Locale"
+
+    if [ "$MODE" = "unattended" ]; then
+        info "Locale: ${SELECTED_LOCALE}"
+        return
+    fi
+
+    local locales=(
+        "en_US.UTF-8:English (US)"
+        "en_GB.UTF-8:English (UK)"
+        "de_DE.UTF-8:Deutsch (German)"
+        "fr_FR.UTF-8:Français (French)"
+        "es_ES.UTF-8:Español (Spanish)"
+        "it_IT.UTF-8:Italiano (Italian)"
+        "pt_PT.UTF-8:Português (Portuguese)"
+        "pt_BR.UTF-8:Português (Brazilian)"
+        "nl_NL.UTF-8:Nederlands (Dutch)"
+        "sv_SE.UTF-8:Svenska (Swedish)"
+        "nb_NO.UTF-8:Norsk (Norwegian)"
+        "da_DK.UTF-8:Dansk (Danish)"
+        "fi_FI.UTF-8:Suomi (Finnish)"
+        "pl_PL.UTF-8:Polski (Polish)"
+        "cs_CZ.UTF-8:Čeština (Czech)"
+        "hu_HU.UTF-8:Magyar (Hungarian)"
+        "ru_RU.UTF-8:Русский (Russian)"
+        "ja_JP.UTF-8:日本語 (Japanese)"
+        "ko_KR.UTF-8:한국어 (Korean)"
+        "zh_CN.UTF-8:中文 (Chinese Simplified)"
+    )
+
+    echo "Select your language:"
+    echo ""
+    local i=1
+    for entry in "${locales[@]}"; do
+        IFS=':' read -r code name <<< "$entry"
+        local marker="  "
+        [ "$code" = "en_US.UTF-8" ] && marker="${GREEN}▸ ${NC}"
+        printf "  ${marker}${BOLD}%2d)${NC} %s\n" "$i" "$name"
+        i=$((i + 1))
+    done
+    echo ""
+    echo -en "  ${CYAN}?${NC} Choose [1]: "
+    read -r loc_choice
+    loc_choice="${loc_choice:-1}"
+
+    if [ "$loc_choice" -ge 1 ] 2>/dev/null && [ "$loc_choice" -le "${#locales[@]}" ]; then
+        local idx=$((loc_choice - 1))
+        IFS=':' read -r SELECTED_LOCALE _ <<< "${locales[$idx]}"
+    else
+        SELECTED_LOCALE="en_US.UTF-8"
+    fi
+
+    ok "Locale: ${SELECTED_LOCALE}"
+}
+
+# ── User Account ───────────────────────────────────────────────────────────
+
+create_user() {
+    section "User Account"
+
+    if [ "$MODE" = "unattended" ]; then
+        info "User: ${SELECTED_USERNAME}"
+        return
+    fi
+
+    echo -e "  ${DIM}Create your user account for this machine.${NC}"
+    echo ""
+
+    # Username
+    echo -en "  ${CYAN}?${NC} Username [hecate]: "
+    read -r input_user
+    SELECTED_USERNAME="${input_user:-hecate}"
+
+    # Validate username
+    if ! [[ "$SELECTED_USERNAME" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]; then
+        warn "Invalid username. Using 'hecate'."
+        SELECTED_USERNAME="hecate"
+    fi
+
+    # Full name (optional)
+    echo -en "  ${CYAN}?${NC} Full name (optional): "
+    read -r SELECTED_FULLNAME
+
+    # Password
+    local password_ok=false
+    while [ "$password_ok" = false ]; do
+        echo -en "  ${CYAN}?${NC} Password: "
+        read -rs pass1
+        echo ""
+
+        if [ -z "$pass1" ]; then
+            warn "Password cannot be empty."
+            continue
+        fi
+
+        if [ "${#pass1}" -lt 4 ]; then
+            warn "Password must be at least 4 characters."
+            continue
+        fi
+
+        echo -en "  ${CYAN}?${NC} Confirm password: "
+        read -rs pass2
+        echo ""
+
+        if [ "$pass1" != "$pass2" ]; then
+            warn "Passwords do not match. Try again."
+        else
+            SELECTED_PASSWORD="$pass1"
+            password_ok=true
+        fi
+    done
+
+    echo ""
+    ok "User: ${SELECTED_USERNAME}"
+}
+
+# ── Confirmation ───────────────────────────────────────────────────────────
+
 confirm_install() {
     echo ""
     echo -e "${BOLD}${RED}WARNING: This will ERASE ALL DATA on the following disk(s):${NC}"
@@ -341,6 +779,10 @@ confirm_install() {
     echo -e "  ${BOLD}Role:${NC}      ${SELECTED_ROLE}"
     echo -e "  ${BOLD}Hostname:${NC}  ${SELECTED_HOSTNAME}"
     echo -e "  ${BOLD}Layout:${NC}    ${SELECTED_DISKO_LAYOUT}"
+    echo -e "  ${BOLD}Keyboard:${NC}  ${SELECTED_KEYBOARD}"
+    echo -e "  ${BOLD}Timezone:${NC}  ${SELECTED_TIMEZONE}"
+    echo -e "  ${BOLD}Locale:${NC}    ${SELECTED_LOCALE}"
+    echo -e "  ${BOLD}User:${NC}      ${SELECTED_USERNAME}"
     echo ""
 
     if [ "$MODE" = "unattended" ]; then
@@ -384,29 +826,64 @@ run_nixos_install() {
     # Generate hardware-configuration.nix for the target
     nixos-generate-config --root /mnt --no-filesystems 2>/dev/null || true
 
-    # Build extra config module with hostname + cluster settings
+    # Build extra config module with all user selections
     local extra_config="/tmp/hecate-extra-config.nix"
+
+    # Hash password for NixOS user config
+    local hashed_password=""
+    if [ -n "$SELECTED_PASSWORD" ]; then
+        hashed_password=$(echo "$SELECTED_PASSWORD" | mkpasswd -m sha-512 -s 2>/dev/null || \
+                          openssl passwd -6 -stdin <<< "$SELECTED_PASSWORD" 2>/dev/null || \
+                          echo "")
+    fi
+
+    # Build the nix config as a string, then write all at once
+    local nix_body=""
+
+    # Identity
+    nix_body+="  networking.hostName = \"${SELECTED_HOSTNAME}\";"$'\n'
+
+    # Locale & Time
+    nix_body+="  time.timeZone = lib.mkForce \"${SELECTED_TIMEZONE}\";"$'\n'
+    nix_body+="  i18n.defaultLocale = lib.mkForce \"${SELECTED_LOCALE}\";"$'\n'
+
+    # Keyboard
+    nix_body+="  console.keyMap = lib.mkForce \"${SELECTED_KEYBOARD}\";"$'\n'
+    nix_body+="  services.xserver.xkb.layout = lib.mkDefault \"${SELECTED_KEYBOARD}\";"$'\n'
+
+    # User account
+    nix_body+="  services.hecate.user = lib.mkForce \"${SELECTED_USERNAME}\";"$'\n'
+    nix_body+="  users.users.\"${SELECTED_USERNAME}\" = {"$'\n'
+    nix_body+="    isNormalUser = true;"$'\n'
+    nix_body+="    extraGroups = [ \"wheel\" \"podman\" \"networkmanager\" ];"$'\n'
+    nix_body+="    shell = pkgs.zsh;"$'\n'
+    [ -n "$SELECTED_FULLNAME" ] && \
+    nix_body+="    description = \"${SELECTED_FULLNAME}\";"$'\n'
+    [ -n "$hashed_password" ] && \
+    nix_body+="    hashedPassword = \"${hashed_password}\";"$'\n'
+    nix_body+="  };"$'\n'
+
+    # Cluster config
+    if [ "$SELECTED_ROLE" = "cluster" ] && [ -n "$CLUSTER_COOKIE" ]; then
+        nix_body+="  services.hecate.cluster = {"$'\n'
+        nix_body+="    cookie = \"${CLUSTER_COOKIE}\";"$'\n'
+        [ -n "$CLUSTER_PEERS" ] && \
+        nix_body+="    peers = [ ${CLUSTER_PEERS} ];"$'\n'
+        nix_body+="  };"$'\n'
+    fi
+
+    # Laptop
+    if [ -d /sys/class/power_supply ] && ls /sys/class/power_supply/BAT* &>/dev/null; then
+        info "Battery detected — enabling laptop power management"
+        nix_body+="  services.hecate.desktop.laptop.enable = true;"$'\n'
+    fi
+
     cat > "$extra_config" <<NIX
-{ lib, ... }:
+{ lib, pkgs, ... }:
 
 {
-  networking.hostName = "${SELECTED_HOSTNAME}";
-
-  # Disko manages filesystems — disable default hardware-configuration mounts
-  # (nixos-generate-config creates these but disko already handles them)
-}
+${nix_body}}
 NIX
-
-    # Add cluster config if applicable
-    if [ "$SELECTED_ROLE" = "cluster" ] && [ -n "$CLUSTER_COOKIE" ]; then
-        cat >> "$extra_config" <<NIX
-
-  services.hecate.cluster = {
-    cookie = "${CLUSTER_COOKIE}";
-    ${CLUSTER_PEERS:+peers = [ ${CLUSTER_PEERS} ];}
-  };
-NIX
-    fi
 
     info "Installing NixOS (flake: ${flake_target})..."
     info "This will download packages from the binary cache. Requires internet."
@@ -426,6 +903,10 @@ finish_install() {
     echo -e "${NC}${BOLD}  Summary:${NC}"
     echo -e "  ${BOLD}Hostname:${NC}  ${SELECTED_HOSTNAME}"
     echo -e "  ${BOLD}Role:${NC}      ${SELECTED_ROLE}"
+    echo -e "  ${BOLD}User:${NC}      ${SELECTED_USERNAME}"
+    echo -e "  ${BOLD}Keyboard:${NC}  ${SELECTED_KEYBOARD}"
+    echo -e "  ${BOLD}Timezone:${NC}  ${SELECTED_TIMEZONE}"
+    echo -e "  ${BOLD}Locale:${NC}    ${SELECTED_LOCALE}"
     echo -e "  ${BOLD}Disk:${NC}      ${SELECTED_DISK}"
     echo ""
     echo -e "  ${DIM}The system will reboot in 5 seconds...${NC}"
@@ -457,6 +938,16 @@ load_config_file() {
     SELECTED_HOSTNAME=$(jq -r '.hostname // empty' "$file" 2>/dev/null || echo "")
     CLUSTER_COOKIE=$(jq -r '.cluster.cookie // "hecate_cluster_secret"' "$file" 2>/dev/null || echo "hecate_cluster_secret")
     CLUSTER_PEERS=$(jq -r '.cluster.peers // [] | map("\"" + . + "\"") | join(" ")' "$file" 2>/dev/null || echo "")
+
+    # OOBE fields
+    local kb; kb=$(jq -r '.keyboard // empty' "$file" 2>/dev/null || echo "")
+    [ -n "$kb" ] && SELECTED_KEYBOARD="$kb"
+    local tz; tz=$(jq -r '.timezone // empty' "$file" 2>/dev/null || echo "")
+    [ -n "$tz" ] && SELECTED_TIMEZONE="$tz"
+    local loc; loc=$(jq -r '.locale // empty' "$file" 2>/dev/null || echo "")
+    [ -n "$loc" ] && SELECTED_LOCALE="$loc"
+    local usr; usr=$(jq -r '.username // empty' "$file" 2>/dev/null || echo "")
+    [ -n "$usr" ] && SELECTED_USERNAME="$usr"
 
     [ -n "$SELECTED_ROLE" ] && ok "Role: ${SELECTED_ROLE}"
     [ -n "$SELECTED_DISK" ] && ok "Disk: ${SELECTED_DISK}"
@@ -492,6 +983,22 @@ parse_args() {
                 SELECTED_HOSTNAME="$2"
                 shift 2
                 ;;
+            --keyboard)
+                SELECTED_KEYBOARD="$2"
+                shift 2
+                ;;
+            --timezone)
+                SELECTED_TIMEZONE="$2"
+                shift 2
+                ;;
+            --locale)
+                SELECTED_LOCALE="$2"
+                shift 2
+                ;;
+            --username)
+                SELECTED_USERNAME="$2"
+                shift 2
+                ;;
             --help|-h)
                 echo "Usage: hecate-install [OPTIONS]"
                 echo ""
@@ -502,10 +1009,16 @@ parse_args() {
                 echo "  --role ROLE         Pre-set role (standalone|cluster|inference|workstation|desktop)"
                 echo "  --disk DEVICE       Pre-set target disk (e.g., /dev/sda)"
                 echo "  --hostname NAME     Pre-set hostname"
+                echo "  --keyboard LAYOUT   Pre-set keyboard (us, de, fr, etc.)"
+                echo "  --timezone TZ       Pre-set timezone (e.g., Europe/Brussels)"
+                echo "  --locale LOCALE     Pre-set locale (e.g., en_US.UTF-8)"
+                echo "  --username USER     Pre-set username"
                 echo "  --help, -h          Show this help"
                 echo ""
                 echo "Config file format (JSON):"
-                echo '  { "role": "standalone", "disk": "/dev/sda", "hostname": "my-node" }'
+                echo '  { "role": "desktop", "disk": "/dev/sda", "hostname": "my-node",'
+                echo '    "keyboard": "us", "timezone": "America/New_York",'
+                echo '    "locale": "en_US.UTF-8", "username": "alice" }'
                 exit 0
                 ;;
             *)
@@ -536,25 +1049,42 @@ main() {
     fi
 
     show_banner
+
+    # ── Step 1: Keyboard (so user can type correctly for remaining steps)
+    select_keyboard
+
+    # ── Step 2: Hardware detection
     detect_hardware
 
-    # Select role (auto or interactive)
+    # ── Step 3: Network (Wi-Fi if needed — must be online for install)
+    connect_wifi
+
+    # ── Step 4: Role selection (auto or interactive)
     detect_role
 
-    # Select target disk (auto or interactive)
+    # ── Step 5: Target disk
     if [ -z "$SELECTED_DISK" ]; then
         select_target_disk
     else
         ok "Disk pre-set: ${SELECTED_DISK}"
     fi
 
-    # Select hostname
+    # ── Step 6: Hostname
     select_hostname
 
-    # Generate disko configuration
+    # ── Step 7: Timezone
+    select_timezone
+
+    # ── Step 8: Language
+    select_locale
+
+    # ── Step 9: User account
+    create_user
+
+    # ── Generate disk layout
     generate_disko_config
 
-    # Confirm before destructive operations
+    # ── Confirm before destructive operations
     confirm_install
 
     # Partition and format

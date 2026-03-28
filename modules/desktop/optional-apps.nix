@@ -5,7 +5,8 @@
     libreoffice.enable = lib.mkEnableOption "LibreOffice suite";
     obs.enable = lib.mkEnableOption "OBS Studio screen recording";
     thunderbird.enable = lib.mkEnableOption "Thunderbird email client";
-    hacking-tools.enable = lib.mkEnableOption "Network analysis tools (nmap, wireshark, tcpdump)";
+    hacking-tools.enable = lib.mkEnableOption "Network analysis tools (nmap, wireshark, tcpdump, termshark)";
+    communication.enable = lib.mkEnableOption "Communication apps (Element, Signal)";
   };
 
   config = lib.mkMerge [
@@ -23,6 +24,13 @@
         nmap
         wireshark
         tcpdump
+        termshark         # TUI Wireshark
+      ];
+    })
+    (lib.mkIf config.services.hecate.desktop.communication.enable {
+      environment.systemPackages = with pkgs; [
+        element-desktop    # Matrix client
+        signal-desktop     # Signal messenger
       ];
     })
   ];

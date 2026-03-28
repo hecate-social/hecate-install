@@ -100,7 +100,13 @@ in
   security.rtkit.enable = true;
 
   # ── Locale ────────────────────────────────────────────────────────────
+  # Defaults — overridden by installer's extra-config via mkForce
   i18n.defaultLocale = lib.mkDefault "en_US.UTF-8";
-  time.timeZone = lib.mkForce "Europe/Brussels";
+  time.timeZone = lib.mkDefault "UTC";
+
+  # ── Laptop support (auto-detected or manually enabled) ───────────────
+  # Enable with: services.hecate.desktop.laptop.enable = true;
+  # The installer auto-enables this when a battery is detected.
 
 }
+

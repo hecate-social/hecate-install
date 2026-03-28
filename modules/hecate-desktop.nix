@@ -14,6 +14,9 @@
     ./desktop/idle-lock.nix
     ./desktop/theming.nix
     ./desktop/dev-tools.nix
+    ./desktop/media.nix
+    ./desktop/productivity.nix
+    ./desktop/laptop.nix
     ./desktop/optional-apps.nix
     ./desktop/remote-desktop.nix
   ];
@@ -37,7 +40,10 @@
       idle-lock.enable = lib.mkDefault true;
       theming.enable = lib.mkDefault true;
       dev-tools.enable = lib.mkDefault true;
+      media.enable = lib.mkDefault true;
+      productivity.enable = lib.mkDefault true;
       libreoffice.enable = lib.mkDefault true;
+      laptop.enable = lib.mkDefault false;
       remote-desktop.enable = lib.mkDefault false;
     };
   };

@@ -15,10 +15,13 @@
       hyprpaper
       hypridle
       hyprlock
+      hyprpicker             # color picker
       wl-clipboard
       cliphist
       grim
       slurp
+      satty                  # screenshot annotation (swappy successor)
+      wf-recorder            # screen recording
       wlogout
       brightnessctl
       playerctl
@@ -26,6 +29,7 @@
       pavucontrol
       networkmanagerapplet
       wlsunset
+      udiskie                # USB automount
     ];
 
     # Wayland environment variables

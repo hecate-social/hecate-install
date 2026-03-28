@@ -12,13 +12,22 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    zen-browser = {
+      url = "github:zen-browser/desktop";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, disko }:
+  outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, disko, zen-browser }:
     let
       # Overlay that pulls erlang_28 from nixpkgs-unstable
       erlang28Overlay = final: prev: {
         erlang_28 = (import nixpkgs-unstable { system = prev.system; }).erlang_28;
+      };
+
+      # Zen Browser overlay
+      zenBrowserOverlay = final: prev: {
+        zen-browser = zen-browser.packages.${prev.system}.default or null;
       };
 
       # Helper to make a NixOS configuration for a given role and hardware
@@ -36,6 +45,7 @@
         nixpkgs.lib.nixosSystem {
           inherit system;
           modules = [
+            { nixpkgs.overlays = [ zenBrowserOverlay ]; }
             home-manager.nixosModules.home-manager
             ./configurations/desktop.nix
             (./hardware + "/${hardware}.nix")
@@ -156,6 +166,7 @@
           isoSystem = nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
             modules = [
+              { nixpkgs.overlays = [ zenBrowserOverlay ]; }
               home-manager.nixosModules.home-manager
               ./configurations/live-desktop.nix
               ./hardware/generic-x86.nix
