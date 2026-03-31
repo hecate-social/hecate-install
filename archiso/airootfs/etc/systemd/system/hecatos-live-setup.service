@@ -1,0 +1,14 @@
+[Unit]
+Description=hecatOS Live Environment Setup
+Before=greetd.service
+After=systemd-sysusers.service
+ConditionPathExists=!/var/lib/hecatos-live-setup-done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/hecatos-live-setup
+ExecStartPost=/usr/bin/touch /var/lib/hecatos-live-setup-done
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Install hecatOS
+Comment=Install hecatOS to disk
+Exec=kitty --title "hecatOS Installer" -e sudo /usr/local/bin/hecate-install
+Icon=system-software-install
+Terminal=false
+Categories=System;
+Keywords=install;setup;

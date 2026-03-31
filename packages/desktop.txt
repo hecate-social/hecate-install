@@ -1,0 +1,157 @@
+# hecatOS desktop packages — Hyprland desktop environment
+# One package per line, comments with #
+
+# ── Hyprland ──
+hyprland
+hyprpaper
+hypridle
+hyprlock
+hyprpicker
+xdg-desktop-portal-hyprland
+xdg-utils
+xdg-user-dirs
+
+# ── Wayland essentials ──
+wl-clipboard
+cliphist
+grim
+slurp
+wf-recorder
+#wlogout (AUR)
+qt5-wayland
+qt6-wayland
+
+# ── Terminal ──
+kitty
+
+# ── Shell prompt ──
+starship
+
+# ── Editor ──
+neovim
+tree-sitter
+tree-sitter-cli
+luajit
+
+# ── Status bar ──
+waybar
+
+# ── App launcher ──
+rofi
+rofimoji
+
+# ── Notifications ──
+dunst
+libnotify
+
+# ── Display/session ──
+greetd
+greetd-tuigreet
+brightnessctl
+playerctl
+wlsunset
+udiskie
+
+# ── Audio ──
+pipewire
+pipewire-alsa
+pipewire-pulse
+pipewire-jack
+wireplumber
+pavucontrol
+
+# ── Bluetooth ──
+bluez
+bluez-utils
+blueman
+
+# ── Auth/polkit ──
+polkit-gnome
+
+# ── Network UI ──
+network-manager-applet
+
+# ── Theming ──
+papirus-icon-theme
+qt5ct
+qt6ct
+kvantum
+nwg-look
+
+# ── Fonts ──
+ttf-firacode-nerd
+ttf-nerd-fonts-symbols
+noto-fonts
+noto-fonts-emoji
+ttf-dejavu
+cantarell-fonts
+
+# ── File manager ──
+nautilus
+file-roller
+
+# ── Browsers ──
+firefox
+
+# ── Media ──
+mpv
+imv
+
+# ── Productivity ──
+zathura
+zathura-pdf-mupdf
+qalculate-gtk
+
+# ── Screenshot tools ──
+satty
+
+# ── Dev tools CLI ──
+bat
+eza
+fd
+ripgrep
+fzf
+zoxide
+yazi
+ncdu
+dust
+duf
+tree
+ouch
+git-delta
+lazygit
+lazydocker
+k9s
+btop
+procs
+bandwhich
+gping
+doggo
+mtr
+iperf3
+yq
+sd
+choose
+xh
+just
+watchexec
+hyperfine
+tokei
+hexyl
+tmux
+zellij
+tealdeer
+#viddy (AUR)
+direnv
+
+# ── Build tools (for neovim plugins etc) ──
+gcc
+make
+nodejs
+npm
+python
+python-pip
+rust
+
+# ── System info ──
+fastfetch

@@ -1,0 +1,16 @@
+# hecatOS AUR packages — installed via yay/paru
+# One package per line, comments with #
+
+# ── Theming ──
+tokyonight-gtk-theme-git
+bibata-cursor-theme
+
+# ── Browser ──
+zen-browser-bin
+
+# ── Oh My Zsh ──
+oh-my-zsh-git
+
+# ── Screenshot annotation ──
+# satty is in community, but if not available:
+# satty-bin

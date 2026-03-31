@@ -1,0 +1,4 @@
+# hecatOS cluster packages — BEAM cluster node
+# One package per line, comments with #
+
+erlang

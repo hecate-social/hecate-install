@@ -20,3 +20,6 @@ ansible/inventory.ini
 result
 result-*
 .direnv/
+build/
+archiso/airootfs/usr/local/share/
+archiso/airootfs/etc/skel/

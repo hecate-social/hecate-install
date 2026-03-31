@@ -1,0 +1,59 @@
+# hecatOS base packages — installed on all roles
+# One package per line, comments with #
+
+# ── Core system ──
+base
+base-devel
+linux
+linux-headers
+linux-firmware
+grub
+efibootmgr
+os-prober
+
+# ── Filesystem ──
+btrfs-progs
+xfsprogs
+dosfstools
+ntfs-3g
+e2fsprogs
+
+# ── Networking ──
+networkmanager
+openssh
+avahi
+nss-mdns
+firewalld
+iwd
+
+# ── Shell ──
+zsh
+zsh-autosuggestions
+zsh-syntax-highlighting
+zsh-completions
+
+# ── Core CLI tools ──
+git
+curl
+wget
+vim
+jq
+htop
+man-db
+man-pages
+unzip
+zip
+7zip
+
+# ── Containers ──
+podman
+podman-compose
+crun
+slirp4netns
+fuse-overlayfs
+
+# ── System ──
+polkit
+sudo
+reflector
+pacman-contrib

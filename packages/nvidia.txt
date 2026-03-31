@@ -1,0 +1,9 @@
+# hecatOS NVIDIA packages — proprietary driver
+# One package per line, comments with #
+
+nvidia-open-dkms
+nvidia-utils
+nvidia-settings
+nvtop
+vulkan-tools
+mesa-utils

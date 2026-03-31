@@ -1,0 +1,8 @@
+NAME="hecatOS"
+PRETTY_NAME="hecatOS"
+ID=hecatos
+ID_LIKE=arch cachyos
+BUILD_ID=rolling
+ANSI_COLOR="38;2;122;162;247"
+HOME_URL="https://hecatos.org/"
+LOGO=hecatos

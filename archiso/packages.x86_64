@@ -1,0 +1,195 @@
+# hecatOS Live ISO packages
+# Full live desktop environment + installer tools
+
+# ── Base system ──
+base
+base-devel
+linux
+linux-headers
+linux-firmware
+mkinitcpio
+mkinitcpio-archiso
+syslinux
+
+# ── Boot ──
+grub
+efibootmgr
+
+# ── Filesystem tools (needed by installer) ──
+btrfs-progs
+dosfstools
+e2fsprogs
+xfsprogs
+ntfs-3g
+gptfdisk
+parted
+
+# ── Networking ──
+networkmanager
+iwd
+openssh
+curl
+wget
+git
+
+# ── Hyprland desktop ──
+hyprland
+hyprpaper
+hypridle
+hyprlock
+hyprpicker
+xdg-desktop-portal-hyprland
+xdg-utils
+wl-clipboard
+cliphist
+grim
+slurp
+satty
+wf-recorder
+#wlogout (AUR only)
+brightnessctl
+playerctl
+polkit-gnome
+network-manager-applet
+udiskie
+
+# ── Audio ──
+pipewire
+pipewire-alsa
+pipewire-pulse
+pipewire-jack
+wireplumber
+pavucontrol
+
+# ── Bluetooth ──
+bluez
+bluez-utils
+blueman
+
+# ── Display manager ──
+greetd
+greetd-tuigreet
+
+# ── Terminal ──
+kitty
+
+# ── Shell ──
+zsh
+zsh-autosuggestions
+zsh-syntax-highlighting
+zsh-completions
+starship
+fastfetch
+
+# ── Editors ──
+vim
+neovim
+tree-sitter
+tree-sitter-cli
+luajit
+
+# ── File managers ──
+nautilus
+mc
+yazi
+
+# ── Status bar + launcher + notifications ──
+waybar
+rofi
+rofimoji
+dunst
+libnotify
+
+# ── Browsers ──
+firefox
+
+# ── CLI tools ──
+bat
+eza
+fd
+ripgrep
+fzf
+zoxide
+htop
+btop
+procs
+jq
+sd
+choose
+tree
+ncdu
+dust
+duf
+ouch
+git-delta
+tmux
+zellij
+tealdeer
+#viddy (AUR only)
+hexyl
+tokei
+xh
+gping
+doggo
+mtr
+just
+hyperfine
+direnv
+watchexec
+lazygit
+lazydocker
+
+# ── Build tools (for neovim plugins) ──
+gcc
+make
+nodejs
+npm
+python
+rust
+
+# ── Media ──
+mpv
+imv
+
+# ── Productivity ──
+zathura
+zathura-pdf-mupdf
+qalculate-gtk
+file-roller
+
+# ── Fonts ──
+ttf-firacode-nerd
+ttf-nerd-fonts-symbols
+noto-fonts
+noto-fonts-emoji
+ttf-dejavu
+cantarell-fonts
+
+# ── Theming ──
+papirus-icon-theme
+qt5ct
+qt6ct
+kvantum
+nwg-look
+
+# ── System ──
+sudo
+polkit
+reflector
+pacman-contrib
+man-db
+man-pages
+unzip
+zip
+7zip
+
+# ── Arch installer tools ──
+arch-install-scripts
+dialog
+dhcpcd
+
+# ── Containers (available in live for testing) ──
+podman
+podman-compose
+
+# CachyOS repos are configured by the installer on the target system

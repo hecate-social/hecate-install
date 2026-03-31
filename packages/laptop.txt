@@ -1,0 +1,8 @@
+# hecatOS laptop packages — power management
+# One package per line, comments with #
+
+#auto-cpufreq (AUR — installed via paru)
+thermald
+powertop
+acpi
+brightnessctl

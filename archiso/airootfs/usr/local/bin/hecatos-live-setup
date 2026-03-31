@@ -1,0 +1,26 @@
+#!/bin/bash
+# hecatOS live environment first-boot setup
+# Creates the live user and configures the environment
+set -e
+
+# Create hecate user if not exists
+if ! id hecate &>/dev/null; then
+    useradd -m -G wheel,audio,video,storage,optical,network,input -s /bin/zsh hecate
+    passwd -d hecate  # empty password for live session
+fi
+
+# Set root password for emergency console
+echo "root:hecate" | chpasswd
+
+# Copy skel to hecate home if .config doesn't exist yet
+if [ ! -d /home/hecate/.config ]; then
+    cp -r /etc/skel/. /home/hecate/
+    chown -R hecate:hecate /home/hecate
+fi
+
+# Generate locale if not done
+if [ ! -f /usr/lib/locale/locale-archive ] || ! locale -a 2>/dev/null | grep -q en_US; then
+    locale-gen
+fi
+
+echo "hecatOS live setup complete"
