@@ -991,7 +991,7 @@ install_hecate_stack() {
     cat > "${hecate_home}/compose/docker-compose.yml" <<'COMPOSE'
 services:
   hecate-daemon:
-    image: ghcr.io/hecate-social/hecate-daemon:main
+    image: ghcr.io/hecate-social/hecate-daemon:latest
     container_name: hecate-daemon
     restart: unless-stopped
     volumes:

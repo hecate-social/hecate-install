@@ -26,7 +26,10 @@ SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 REPO_BASE="https://github.com/hecate-social"
 
 # Docker image (GitHub Container Registry)
-HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:${HECATE_TAG:-main}"
+#   :latest   — most recently tagged release (multi-arch); the default
+#   :main     — bleeding-edge amd64 build from the main branch
+#   :v0.16.5  — pin to a specific version (see COMPATIBILITY.md)
+HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:${HECATE_TAG:-latest}"
 
 # Flags
 HEADLESS=false
@@ -897,7 +900,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Container]
-Image=ghcr.io/hecate-social/hecate-daemon:main
+Image=${HECATE_IMAGE}
 ContainerName=hecate-daemon
 PodmanArgs=--arch ${arch}
 AutoUpdate=registry
