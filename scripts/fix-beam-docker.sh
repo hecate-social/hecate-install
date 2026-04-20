@@ -37,7 +37,7 @@ ExecStart=/usr/bin/docker run --rm --name hecate-daemon \
   --env-file /home/rl/.hecate/secrets/llm-providers.env \
   -v /home/rl/.hecate/hecate-daemon:/home/rl/.hecate/hecate-daemon:Z \
   -v /home/rl/.hecate/gitops:/home/rl/.hecate/gitops:ro \
-  ghcr.io/hecate-social/hecate-daemon:main
+  ghcr.io/hecate-social/hecate-daemon:latest
 ExecStop=/usr/bin/docker stop -t 30 hecate-daemon
 Restart=always
 RestartSec=10s
