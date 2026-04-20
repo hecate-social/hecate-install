@@ -9,14 +9,19 @@
 
 ---
 
-## Two Ways to Deploy
+## Install Paths
 
-| Method | Use Case | How |
-|--------|----------|-----|
-| **NixOS Flake** | Bootable USB/ISO/SD card | `nix build .#iso` |
-| **install.sh** | Existing Linux machine | `curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh \| bash` |
+| Method | Use Case | Status | How |
+|--------|----------|--------|-----|
+| **Arch/CachyOS installer** | Bootable live ISO (recommended) | 🟢 Active | `scripts/hecate-install-arch.sh` + `archiso/` |
+| **install.sh** | Existing Linux machine | 🟢 Active | `curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh \| bash` |
+| **NixOS Flake** | Bootable USB/ISO (NixOS-native) | 🟡 Exploratory | `nix build .#iso` |
+| **Ansible** | Existing SSH-accessible fleet | 🟡 Existing clusters | `ansible/` |
 
-Both produce the same result: podman + reconciler + gitops + hecate-daemon.
+All paths produce the same result: podman + reconciler + gitops + hecate-daemon.
+
+See [COMPATIBILITY.md](./COMPATIBILITY.md) for supported daemon versions per
+install release and guidance on pinning `:main` vs a specific semver tag.
 
 ## Quick Install (Existing Machine)
 

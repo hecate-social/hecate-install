@@ -2,15 +2,20 @@
 
 *Current state of the apprentice's work.*
 
+> ⚠️ **Stale (2026-04-20)**: The apprentice-log pattern below was last
+> actively maintained on 2026-02-03. Recent install-repo work happened
+> directly on `main` without touching this file. Treat the session log
+> below as historical; see CHANGELOG.md and `git log` for current state.
+
 ---
 
 ## Current Task
 
-**COMPLETE: Install Script Review & SKILLS.md Audit**
+**OUTSTANDING: Consolidate install paths (Arch vs NixOS vs Ansible)**
 
 ## Last Active
 
-**2026-02-03**
+**2026-02-03** (apprentice log), 2026-03-31 (last repo commit on `main`)
 
 ---
 
