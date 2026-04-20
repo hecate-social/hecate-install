@@ -11,7 +11,7 @@ and flags known drift.
 
 | hecate-install | hecate-daemon | Status |
 |---|---|---|
-| `main` (unreleased) | `0.16.x` (`:latest` tag) | Live — tracks most recent tagged release |
+| `main` (unreleased) | `0.18.x` (`:latest` tag) | Live — tracks most recent tagged release |
 
 Install paths default to `ghcr.io/hecate-social/hecate-daemon:latest`
 (multi-arch, built on every `v*` git tag). With podman `AutoUpdate=registry`,
@@ -26,6 +26,7 @@ built on every `main` branch push).
 
 | hecate-install | hecate-daemon (tested) | Notes |
 |---|---|---|
+| `0.4.0` (upcoming) | `0.18.0` | **First release with Briefcase.** Arch live ISO + Ansible + install.sh (NixOS retired). |
 | `0.3.0` (2026-02-21) | `0.12.x` approx. | NixOS flake, pre-Briefcase, pre-MPong |
 | `0.2.x` and earlier | `0.8.x` or older | k3s-based; DO NOT USE — superseded by podman + systemd --user |
 
@@ -68,12 +69,12 @@ Minimum daemon versions for major user-visible capabilities:
 
 | Capability | Introduced in |
 |---|---|
-| Pairing flow (Portal ↔ daemon) | `0.9.x` |
+| Pairing → **Joining** flow (Portal ↔ daemon) | `0.9.x`; renamed in `0.18.x` |
 | Realm memberships | `0.10.x` |
 | Site lifecycle | `0.11.x` |
 | Plugin lifecycle (OCI install/upgrade) | `0.13.x` |
 | MPong demo | `0.14.x` |
-| **Briefcase** (realm-synced files) | `0.17.x` (planned; Phase 1 PRs #5–8 + Phase 2 #9) |
+| **Briefcase** (realm-synced files) | `0.18.x` — drag-and-drop upload, mesh distribution via `<realm>.briefcase.file_shared` + `<realm>.briefcase.get_chunk` |
 
 If you pin below these versions, the respective UI tabs in `hecate-web` will be empty or return 404.
 
