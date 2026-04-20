@@ -11,9 +11,14 @@ and flags known drift.
 
 | hecate-install | hecate-daemon | Status |
 |---|---|---|
-| `main` (unreleased) | `0.16.x` (`:main` tag) | Live — tracks latest CI builds |
+| `main` (unreleased) | `0.16.x` (`:latest` tag) | Live — tracks most recent tagged release |
 
-Most install paths in `main` pin the daemon to `ghcr.io/hecate-social/hecate-daemon:main`. With podman auto-update enabled, nodes pull new daemon builds automatically as CI merges land.
+Install paths default to `ghcr.io/hecate-social/hecate-daemon:latest`
+(multi-arch, built on every `v*` git tag). With podman `AutoUpdate=registry`,
+nodes pull new daemon releases automatically as they are cut.
+
+Developers can opt into bleeding edge with `HECATE_TAG=main` (amd64 only,
+built on every `main` branch push).
 
 ---
 
@@ -49,9 +54,9 @@ Pick the tradeoff per deployment tier:
 
 | Tier | Image tag | Why |
 |---|---|---|
-| Dev / home lab | `:main` | Always fresh; auto-update via podman |
-| Staging / BEAM cluster | `:main` with alerting | Catch regressions on real hardware |
-| Production / customer nodes | pinned semver (`:0.16.5`) | Deterministic rollback; upgrade on your schedule |
+| Production / customer nodes | `:latest` (default) | Multi-arch, tagged-release-only, auto-updates on new releases |
+| Pinned production | `:v0.16.5` | Deterministic rollback; upgrade on your schedule |
+| Dev / bleeding edge | `:main` | amd64 only, every main-branch push, may be unstable |
 
 Pinned semver + podman auto-update still works — set `AutoUpdate=registry` and bump the tag only when you cut a release.
 
