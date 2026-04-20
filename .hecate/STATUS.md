@@ -11,11 +11,14 @@
 
 ## Current Task
 
-**OUTSTANDING: Consolidate install paths (Arch vs NixOS vs Ansible)**
+**DONE: Consolidate install paths (2026-04-20)**
+
+NixOS flake retired in favor of Arch live ISO + Ansible + `install.sh`.
+Git history preserves the flake if it ever needs to be resurrected.
 
 ## Last Active
 
-**2026-02-03** (apprentice log), 2026-03-31 (last repo commit on `main`)
+**2026-02-03** (apprentice log), 2026-04-20 (install-path consolidation)
 
 ---
 
