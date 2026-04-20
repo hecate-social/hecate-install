@@ -26,7 +26,8 @@ built on every `main` branch push).
 
 | hecate-install | hecate-daemon (tested) | Notes |
 |---|---|---|
-| `0.4.0` (upcoming) | `0.18.0` | **First release with Briefcase.** Arch live ISO + Ansible + install.sh (NixOS retired). |
+| `0.12.0` (upcoming) | `0.18.0` | **First release with Briefcase.** Arch live ISO + Ansible + install.sh (NixOS retired). |
+| `v0.11.2` and earlier | varies | Tags exist but CHANGELOG.md was not maintained between 0.3.0 and this release — consult `git log` for the intervening changes. |
 | `0.3.0` (2026-02-21) | `0.12.x` approx. | NixOS flake, pre-Briefcase, pre-MPong |
 | `0.2.x` and earlier | `0.8.x` or older | k3s-based; DO NOT USE — superseded by podman + systemd --user |
 

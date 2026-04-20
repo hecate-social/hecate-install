@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-04-20
+
+> Version numbering jumps from 0.3.0 to 0.12.0 to match the latest git tag
+> (v0.11.2). The entries between 0.3.0 and this release were not captured in
+> this file; consult `git log v0.3.0..v0.11.2` for that history.
+
+### Added
+
+- `COMPATIBILITY.md` — matrix of hecate-install ↔ hecate-daemon versions,
+  install-path status, feature-per-minimum-daemon-version. Pairs with the
+  hecate-daemon v0.18.0 release that ships Briefcase.
+- `scripts/install-tools-arch.sh` — idempotent developer-workstation tool
+  installer (pacman + AUR packages, skips already-installed).
+
+### Changed
+
+- **Default daemon image tag is now `:latest`** (was `:main`).
+  `install.sh` / `install-hecate-node.sh` / `scripts/hecate-install-arch.sh` /
+  `archiso/airootfs/usr/local/bin/hecate-install` /
+  `scripts/fix-beam-docker.sh` / `scripts/migrate-hecate-to-fast.sh` /
+  `ansible/inventory.example.ini` all updated. Bleeding-edge opt-in via
+  `HECATE_TAG=main`; deterministic pin via `HECATE_TAG=v0.18.0`.
+- `ansible/inventory.example.ini` — daemon image pin bumped from `:0.8.0`
+  (8 minor versions behind) to `:latest`.
+- `README.md` install-paths table lists all three active paths (Arch live
+  ISO, install.sh, Ansible) with status indicators, and points at
+  `COMPATIBILITY.md` for version guidance.
+
 ### Removed
 
 - **NixOS flake** — `flake.nix`, `flake.lock`, and the associated
@@ -17,16 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hecate-daemon and the team chose to consolidate on the Arch live ISO /
   Ansible / `install.sh` paths. Git history preserves the NixOS state if
   it ever needs to come back.
-
-### Changed
-
-- `README.md` install-paths table no longer lists the NixOS flake.
-- `COMPATIBILITY.md` drops the NixOS row and flags the retirement.
-
-### Added
-
-- `COMPATIBILITY.md` — matrix of hecate-install ↔ hecate-daemon versions,
-  install-path status, feature-per-minimum-daemon-version.
 
 ## [0.3.0] - 2026-02-21
 
