@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **NixOS flake** — `flake.nix`, `flake.lock`, and the associated
+  NixOS-specific directories (`modules/`, `disko/`, `hardware/`, `home/`,
+  `configurations/`, `tests/*.nix`, `packages/*.nix`) and scripts
+  (`build-iso.sh`, `scripts/deploy-nixos-beam.sh`, `scripts/nix-build-iso.sh`,
+  `scripts/hecate-install.sh`). The flake had drifted from the current
+  hecate-daemon and the team chose to consolidate on the Arch live ISO /
+  Ansible / `install.sh` paths. Git history preserves the NixOS state if
+  it ever needs to come back.
+
+### Changed
+
+- `README.md` install-paths table no longer lists the NixOS flake.
+- `COMPATIBILITY.md` drops the NixOS row and flags the retirement.
+
+### Added
+
+- `COMPATIBILITY.md` — matrix of hecate-install ↔ hecate-daemon versions,
+  install-path status, feature-per-minimum-daemon-version.
+
 ## [0.3.0] - 2026-02-21
 
 ### Added

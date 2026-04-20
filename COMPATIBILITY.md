@@ -26,18 +26,20 @@ Most install paths in `main` pin the daemon to `ghcr.io/hecate-social/hecate-dae
 
 ---
 
-## Install paths (status)
+## Install paths
 
-Three paths coexist today. The team is consolidating; use this table to
-choose.
+Three active paths after NixOS was retired (2026-04-20):
 
-| Path | Location | Status | Use when |
-|---|---|---|---|
-| **Arch/CachyOS installer** | `scripts/hecate-install-arch.sh`, `archiso/` | 🟢 Active — most recent commits | You want a bootable live ISO for x86_64 laptops |
-| **NixOS flake** | `flake.nix`, `modules/` | 🟡 Exploratory — not retested against current daemon | You prefer NixOS and are willing to debug |
-| **Ansible** | `ansible/` | 🟡 For existing SSH-accessible machines | Reconfigure a fleet of Ubuntu/Debian nodes you already own |
+| Path | Location | Use when |
+|---|---|---|
+| **Arch live ISO** | `archiso/`, `scripts/hecate-install-arch.sh` | You want a bootable live ISO for x86_64 laptops |
+| **install.sh** | `install.sh` | You already have a Linux machine and just want to provision it |
+| **Ansible** | `ansible/` | You want to reconfigure a fleet of SSH-accessible nodes you already own |
 
-The NixOS flake and Arch installer will be merged or one archived; see `.hecate/QUEUE.md` for the current consolidation work.
+The NixOS flake (`flake.nix`, `modules/`, `disko/`, `hardware/`, `home/`,
+`configurations/`, `tests/*.nix`) was removed — it drifted from the active
+daemon and the team chose to consolidate on the Arch/Ansible paths.
+Historical state lives in git history if ever needed again.
 
 ---
 

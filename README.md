@@ -13,10 +13,9 @@
 
 | Method | Use Case | Status | How |
 |--------|----------|--------|-----|
-| **Arch/CachyOS installer** | Bootable live ISO (recommended) | 🟢 Active | `scripts/hecate-install-arch.sh` + `archiso/` |
+| **Arch live ISO** | Bootable live ISO (recommended) | 🟢 Active | `scripts/hecate-install-arch.sh` + `archiso/` |
 | **install.sh** | Existing Linux machine | 🟢 Active | `curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh \| bash` |
-| **NixOS Flake** | Bootable USB/ISO (NixOS-native) | 🟡 Exploratory | `nix build .#iso` |
-| **Ansible** | Existing SSH-accessible fleet | 🟡 Existing clusters | `ansible/` |
+| **Ansible** | Existing SSH-accessible fleet | 🟢 Active | `ansible/` |
 
 All paths produce the same result: podman + reconciler + gitops + hecate-daemon.
 
@@ -29,72 +28,18 @@ install release and guidance on pinning `:main` vs a specific semver tag.
 curl -fsSL https://raw.githubusercontent.com/hecate-social/hecate-install/main/install.sh | bash
 ```
 
-## NixOS Flake (Bootable Media)
+## Arch Live ISO
 
-Build a single bootable USB/ISO image. The firstboot wizard handles role selection on first boot.
+Build a bootable live ISO for x86_64 laptops. The firstboot wizard
+handles pairing on first boot.
 
 ```bash
-# Build the ISO
-nix build .#iso
-sudo dd if=result/iso/nixos-*.iso of=/dev/sdX bs=4M status=progress
-
-# Or download a pre-built ISO from GitHub releases
-
-# Run VM integration tests
-nix flake check
+# Requires archiso (sudo pacman -S archiso)
+sudo mkarchiso -v -w /tmp/archiso-work -o ./out ./archiso
 ```
 
-### NixOS Configuration
-
-For permanent installations, reference the flake in your NixOS config:
-
-```nix
-# /etc/nixos/flake.nix
-{
-  inputs.hecate-node.url = "github:hecate-social/hecate-install";
-  outputs = { self, nixpkgs, hecate-node }: {
-    nixosConfigurations.mynode = nixpkgs.lib.nixosSystem {
-      modules = [
-        hecate-node.nixosConfigurations.standalone.config
-        ./hardware-configuration.nix
-        {
-          networking.hostName = "my-hecate-node";
-          services.hecate.daemon.version = "latest";
-          services.hecate.ollama.models = [ "llama3.2" "deepseek-r1" ];
-        }
-      ];
-    };
-  };
-}
-```
-
-### Flake Structure
-
-```
-flake.nix                       # Entry point + build targets
-configurations/
-  base.nix                      # Common: podman, mDNS, firewall, user
-  standalone.nix                # Base + daemon + Ollama
-  cluster.nix                   # Base + daemon + BEAM clustering
-  inference.nix                 # Ollama only (no daemon)
-  workstation.nix               # Standalone + desktop app
-modules/                        # Composable NixOS modules
-  hecate-{directories,reconciler,gitops,firewall,...}.nix
-hardware/                       # Hardware-specific profiles
-  beam-node.nix                 # Celeron J4105 (beam00-03)
-  generic-x86.nix               # Any x86_64
-  generic-arm64.nix             # RPi4 / ARM64
-packages/                       # Nix derivations
-  hecate-reconciler.nix         # Reconciler bash script
-  hecate-cli.nix                # CLI binary
-tests/                          # NixOS VM integration tests
-  boot-test.nix                 # Boot + reconciler starts
-  plugin-test.nix               # Drop .container -> service starts
-  firstboot-test.nix            # Firstboot wizard flow
-firstboot/                      # Firstboot wizard assets
-  firstboot.sh                  # Pairing flow script
-  index.html                    # Responsive pairing web UI
-```
+See `archiso/` for the live-ISO profile and `scripts/hecate-install-arch.sh`
+for the installer that runs inside the live environment.
 
 ## Architecture
 
