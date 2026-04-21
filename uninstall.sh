@@ -254,6 +254,44 @@ for binary in hecate hecate-reconciler hecate-web; do
 done
 
 # -----------------------------------------------------------------------------
+# Remove Desktop Entry + Icons
+# -----------------------------------------------------------------------------
+
+section "Desktop Entry"
+
+APPS_DIR="${HOME}/.local/share/applications"
+ICONS_DIR="${HOME}/.local/share/icons/hicolor"
+
+removed_desktop=false
+if [ -f "${APPS_DIR}/hecate-web.desktop" ]; then
+    rm -f "${APPS_DIR}/hecate-web.desktop"
+    ok "Removed ${APPS_DIR}/hecate-web.desktop"
+    removed_desktop=true
+fi
+
+# Remove Hecate icons at every size we may have installed
+for size_dir in "${ICONS_DIR}"/*/apps; do
+    if [ -f "${size_dir}/hecate-web.png" ]; then
+        rm -f "${size_dir}/hecate-web.png"
+        removed_desktop=true
+    fi
+done
+
+if [ "$removed_desktop" = true ]; then
+    # Refresh caches so the entry disappears from the launcher immediately
+    if command_exists update-desktop-database; then
+        update-desktop-database "${APPS_DIR}" 2>/dev/null || true
+    fi
+    if command_exists gtk-update-icon-cache; then
+        gtk-update-icon-cache -q -t -f "${ICONS_DIR}" 2>/dev/null || true
+    fi
+    touch "${APPS_DIR}" 2>/dev/null || true
+    ok "Desktop launcher caches refreshed"
+else
+    info "No desktop entry or icons found"
+fi
+
+# -----------------------------------------------------------------------------
 # Clean Shell Profiles
 # -----------------------------------------------------------------------------
 

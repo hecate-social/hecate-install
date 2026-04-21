@@ -1995,25 +1995,59 @@ Type=Application
 Categories=Development;Network;
 DESKTOP
 
-    # Install icons from the binary's bundled assets if available.
-    # The Tauri tarball only contains the binary, so extract icons from the
-    # hecate-web repo if present locally, otherwise skip (icon will be missing
-    # but the app still works).
-    local web_repo="${HOME}/work/github.com/hecate-social/hecate-web"
-    if [ -d "${web_repo}/src-tauri/icons" ]; then
-        for size in 32x32 128x128; do
-            local icon_src="${web_repo}/src-tauri/icons/${size}.png"
-            if [ -f "${icon_src}" ]; then
-                mkdir -p "${icons_dir}/${size}/apps"
-                cp "${icon_src}" "${icons_dir}/${size}/apps/hecate-web.png"
-            fi
-        done
+    install_web_icon
+    refresh_desktop_cache
+}
+
+install_web_icon() {
+    local icons_dir="${HOME}/.local/share/icons/hicolor"
+    local icon_remote_url="https://raw.githubusercontent.com/hecate-social/hecate-install/main/branding/plymouth/hecate/logo.png"
+    local tmp_icon
+    tmp_icon="$(mktemp)"
+
+    # Prefer a local copy (running from a clone) — avoids a network round
+    # trip and keeps installs reproducible offline.
+    local script_dir=""
+    if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    fi
+    local local_icon="${script_dir}/branding/plymouth/hecate/logo.png"
+
+    if [ -n "${script_dir}" ] && [ -f "${local_icon}" ]; then
+        cp "${local_icon}" "${tmp_icon}"
+    elif curl -fsSL "${icon_remote_url}" -o "${tmp_icon}" 2>/dev/null; then
+        : # fetched OK
+    else
+        warn "Could not fetch Hecate icon from ${icon_remote_url}"
+        rm -f "${tmp_icon}"
+        return 0
     fi
 
-    # Update desktop database if available
+    # Install at a large canonical size; GTK/Qt/rofi scale down from this.
+    # Keeping the theme root at a single size avoids managing N resizes
+    # (would need ImageMagick) and matches the 256×256 source asset.
+    for size in 256x256 128x128; do
+        mkdir -p "${icons_dir}/${size}/apps"
+        cp "${tmp_icon}" "${icons_dir}/${size}/apps/hecate-web.png"
+    done
+
+    rm -f "${tmp_icon}"
+    ok "Hecate icon installed"
+}
+
+refresh_desktop_cache() {
+    local apps_dir="${HOME}/.local/share/applications"
+    local icons_dir="${HOME}/.local/share/icons/hicolor"
+
     if command_exists update-desktop-database; then
         update-desktop-database "${apps_dir}" 2>/dev/null || true
     fi
+    if command_exists gtk-update-icon-cache; then
+        gtk-update-icon-cache -q -t -f "${icons_dir}" 2>/dev/null || true
+    fi
+    # Fallback: touch the apps dir so watchers notice. Some DEs (and rofi
+    # with -drun-use-desktop-cache) pick up new entries on mtime change.
+    touch "${apps_dir}" 2>/dev/null || true
 }
 
 # -----------------------------------------------------------------------------
@@ -2071,24 +2105,33 @@ install_cli() {
 
 setup_path() {
     if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-        local shell_profile=""
-        if [ -f "$HOME/.zshrc" ]; then
-            shell_profile="$HOME/.zshrc"
-        elif [ -f "$HOME/.bashrc" ]; then
-            shell_profile="$HOME/.bashrc"
-        fi
-
-        if [ -n "$shell_profile" ]; then
-            if ! grep -q "$BIN_DIR" "$shell_profile" 2>/dev/null; then
-                echo "" >> "$shell_profile"
-                echo "# Hecate" >> "$shell_profile"
-                echo "export PATH=\"\$PATH:$BIN_DIR\"" >> "$shell_profile"
-            fi
-        fi
-
         export PATH="$PATH:$BIN_DIR"
     fi
-    ok "PATH configured"
+
+    # Write to BOTH the interactive-shell rc AND ~/.profile. The rc covers
+    # terminal sessions; ~/.profile is sourced by display managers and
+    # systemd-user at graphical login — without it, launchers like rofi,
+    # dmenu, and the GNOME/KDE app grid cannot see ~/.local/bin.
+    local profiles=()
+    if [ -f "$HOME/.zshrc" ]; then
+        profiles+=("$HOME/.zshrc")
+    elif [ -f "$HOME/.bashrc" ]; then
+        profiles+=("$HOME/.bashrc")
+    fi
+    profiles+=("$HOME/.profile")
+
+    local profile
+    for profile in "${profiles[@]}"; do
+        # Create ~/.profile if missing — required for graphical sessions
+        # that source it but tolerate its absence (e.g., lightdm/sddm).
+        [ -f "$profile" ] || touch "$profile"
+
+        if ! grep -qE "^# Hecate$|${BIN_DIR}" "$profile" 2>/dev/null; then
+            printf '\n# Hecate\nexport PATH="$PATH:%s"\n' "$BIN_DIR" >> "$profile"
+        fi
+    done
+
+    ok "PATH configured (shell rc + ~/.profile for graphical sessions)"
 }
 
 # -----------------------------------------------------------------------------
