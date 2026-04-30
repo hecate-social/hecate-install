@@ -1,0 +1,2 @@
+# Add asdf shims to PATH
+export PATH="$HOME/.asdf/shims:$PATH"

@@ -1,0 +1,16 @@
+
+  # Fix navigation keys that are converting text to uppercase
+  bindkey -e  # Ensure emacs mode is enabled (default)
+
+  # Bind the problematic keys correctly
+  bindkey "^[[H"    beginning-of-line     # HOME
+  bindkey "^[[F"    end-of-line           # END  
+  bindkey "^[[3~"   delete-char           # DEL
+  bindkey "^[[2~"   overwrite-mode        # INS
+  bindkey "^[[1~"   beginning-of-line     # HOME (alternative)
+  bindkey "^[[4~"   end-of-line           # END (alternative)
+
+  # Also fix these common variants
+  bindkey "^[OH"    beginning-of-line     # HOME
+  bindkey "^[OF"    end-of-line           # END
+  bindkey "^?"      backward-delete-char  # Backspace

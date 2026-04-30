@@ -1,0 +1,5 @@
+###############
+## Caps2Esc 
+###############
+
+localectl set-x11-keymap us '' '' caps:escape

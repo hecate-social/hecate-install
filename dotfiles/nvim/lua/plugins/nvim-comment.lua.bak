@@ -1,0 +1,8 @@
+require('nvim_comment').setup({
+  -- Add any specific configuration here if needed
+  -- For example, you can set line mapping to false if you want to disable it
+  line_mapping = "<leader>cc",
+  operator_mapping = "<leader>c",
+})
+
+-- Example setup with default settings, you can customize the mappings as needed

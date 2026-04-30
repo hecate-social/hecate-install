@@ -1,0 +1,17 @@
+return {
+  {
+    "jackMort/ChatGPT.nvim",
+    config = function()
+      require("chatgpt").setup({
+        api_key_cmd = "echo $SWAI_OPEN_API_KEY",
+        model = "gpt-4o-turbo",
+      })
+      vim.api.nvim_set_keymap('n', '<leader>cg', ':ChatGPT<CR>', { noremap = true, silent = true })
+    end,
+    requires = {
+      "MunifTanjim/nui.nvim",
+      "nvim-lua/plenary.nvim",
+      "nvim-telescope/telescope.nvim"
+    }
+  }
+}

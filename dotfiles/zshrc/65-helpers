@@ -1,0 +1,26 @@
+# -----------------------------------------------------
+# Helper functions for new tools
+# -----------------------------------------------------
+
+# Use bat for man pages with syntax highlighting
+help() {
+    "$@" --help 2>&1 | bathelp
+}
+
+# Quick nmap scan aliases via functions
+nmap-quick() {
+    nmap -F "$@"
+}
+
+nmap-full() {
+    sudo nmap -sS -sV -O "$@"
+}
+
+nmap-vuln() {
+    nmap --script vuln "$@"
+}
+
+# Disk usage in current directory
+duh() {
+    ncdu --color dark "${1:-.}"
+}

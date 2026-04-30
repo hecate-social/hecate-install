@@ -1,0 +1,50 @@
+# -----------------------------------------------------
+# Zoxide - Smarter cd command
+# -----------------------------------------------------
+# Initialize zoxide (creates 'z' and 'zi' functions)
+eval "$(zoxide init zsh)"
+
+# -----------------------------------------------------
+# Core Aliases
+# -----------------------------------------------------
+# cdi - Interactive directory selection with fzf
+alias cdi='zi'
+
+# zz - Jump to previous directory
+alias zz='z -'
+
+# -----------------------------------------------------
+# Query & Management
+# -----------------------------------------------------
+# zl - List all tracked directories with scores
+alias zl='zoxide query --list --score'
+
+# zr - Remove current directory from database
+alias zr='zoxide remove "$(pwd)"'
+
+# zclean - Remove directories that no longer exist
+alias zclean='zoxide query --list | while read dir; do [ ! -d "$dir" ] && zoxide remove "$dir" && echo "Removed: $dir"; done'
+
+# -----------------------------------------------------
+# Interactive Variants with Preview
+# -----------------------------------------------------
+# zip - Interactive selection with file preview
+zip() {
+  local dir
+  dir=$(zoxide query --list | fzf --preview 'ls -la --color=always {}' --preview-window=right:50%)
+  [ -n "$dir" ] && cd "$dir"
+}
+
+# zit - Interactive selection with tree preview
+zit() {
+  local dir
+  dir=$(zoxide query --list | fzf --preview 'tree -C -L 2 {} 2>/dev/null || ls -la --color=always {}' --preview-window=right:50%)
+  [ -n "$dir" ] && cd "$dir"
+}
+
+# -----------------------------------------------------
+# Quick Project Jumps (learns your patterns)
+# -----------------------------------------------------
+alias zw='z work'
+alias zg='z github'
+alias zc='z config'

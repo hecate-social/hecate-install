@@ -1,0 +1,116 @@
+# -----------------------------------------------------
+# FZF Configuration
+# -----------------------------------------------------
+
+# -----------------------------------------------------
+# Tokyo Night Color Scheme
+# -----------------------------------------------------
+export FZF_DEFAULT_OPTS="
+  --color=bg+:#292e42,bg:#1a1b26,spinner:#bb9af7,hl:#7aa2f7
+  --color=fg:#c0caf5,header:#7aa2f7,info:#7dcfff,pointer:#bb9af7
+  --color=marker:#9ece6a,fg+:#c0caf5,prompt:#bb9af7,hl+:#7aa2f7
+  --height=80%
+  --layout=reverse
+  --border=rounded
+  --prompt='  '
+  --pointer='▶'
+  --marker='✓'
+  --preview-window='right:60%:border-left'
+  --bind='ctrl-/:toggle-preview'
+  --bind='ctrl-d:preview-page-down'
+  --bind='ctrl-u:preview-page-up'
+  --bind='ctrl-a:select-all'
+  --bind='ctrl-y:execute-silent(echo -n {+} | wl-copy)'
+"
+
+# -----------------------------------------------------
+# Default commands (using fd - fast and .gitignore aware)
+# -----------------------------------------------------
+export FZF_DEFAULT_COMMAND='fd --type f --hidden --exclude .git'
+
+# CTRL-T: Paste selected files onto command line
+export FZF_CTRL_T_COMMAND='fd --type f --hidden --exclude .git'
+export FZF_CTRL_T_OPTS="
+  --preview 'bat --style=numbers --color=always --line-range :500 {} 2>/dev/null || cat {}'
+  --header 'CTRL-T: Select files'
+"
+
+# CTRL-R: Search command history
+export FZF_CTRL_R_OPTS="
+  --preview 'echo {}'
+  --preview-window='down:3:wrap'
+  --header 'CTRL-R: Command history'
+  --bind 'ctrl-y:execute-silent(echo -n {2..} | wl-copy)+abort'
+"
+
+# ALT-C: cd into selected directory
+export FZF_ALT_C_COMMAND='fd --type d --hidden --exclude .git'
+export FZF_ALT_C_OPTS="
+  --preview 'tree -C -L 2 {} 2>/dev/null | head -50'
+  --header 'ALT-C: Change directory'
+"
+
+# -----------------------------------------------------
+# Useful FZF Functions
+# -----------------------------------------------------
+
+# fe - Edit file with fzf
+fe() {
+  local file
+  file=$(fzf --preview 'bat --style=numbers --color=always --line-range :500 {} 2>/dev/null || cat {}')
+  [ -n "$file" ] && ${EDITOR:-nvim} "$file"
+}
+
+# fh - Search command history and execute
+fh() {
+  local cmd
+  cmd=$(history | fzf --tac | sed 's/^[ ]*[0-9]*[ ]*//')
+  [ -n "$cmd" ] && print -z "$cmd"
+}
+
+# fkill - Kill process with fzf
+fkill() {
+  local pid
+  pid=$(ps -ef | sed 1d | fzf -m --header='Select process to kill' | awk '{print $2}')
+  [ -n "$pid" ] && echo "$pid" | xargs kill -${1:-9}
+}
+
+# fenv - Search and display environment variables
+fenv() {
+  local var
+  var=$(printenv | fzf --preview 'echo {}' --preview-window=down:3:wrap)
+  [ -n "$var" ] && echo "$var"
+}
+
+# fman - Search man pages
+fman() {
+  man -k . | fzf --prompt='Man> ' --preview 'man {1}' | awk '{print $1}' | xargs -r man
+}
+
+# -----------------------------------------------------
+# Git + FZF Integration
+# -----------------------------------------------------
+
+# fgb - Checkout git branch
+fgb() {
+  local branch
+  branch=$(git branch -a --color=always | grep -v HEAD | fzf --ansi --preview 'git log --oneline --graph --color=always {1}' | sed 's/^[* ]*//' | sed 's/remotes\/origin\///')
+  [ -n "$branch" ] && git checkout "$branch"
+}
+
+# fgl - Browse git log and show commit
+fgl() {
+  git log --oneline --color=always | fzf --ansi --preview 'git show --color=always {1}' --bind 'enter:execute(git show --color=always {1} | less -R)'
+}
+
+# fgs - Git status with preview
+fgs() {
+  git status -s | fzf --preview 'git diff --color=always {2}' --bind 'enter:execute(git diff --color=always {2} | less -R)'
+}
+
+# fga - Git add with preview
+fga() {
+  local files
+  files=$(git status -s | fzf -m --preview 'git diff --color=always {2}' | awk '{print $2}')
+  [ -n "$files" ] && echo "$files" | xargs git add && git status -s
+}

@@ -262,9 +262,9 @@ rm -rf ~/.hecate
 
 ## Components
 
-- [hecate-daemon](https://github.com/hecate-social/hecate-daemon) - Erlang mesh daemon
-- [hecate-web](https://github.com/hecate-social/hecate-web) - Tauri desktop app
-- [hecate-gitops](https://github.com/hecate-social/hecate-gitops) - Quadlet templates + reconciler
+- [hecate-daemon](https://codeberg.org/hecate-social/hecate-daemon) - Erlang mesh daemon
+- [hecate-web](https://codeberg.org/hecate-social/hecate-web) - Tauri desktop app
+- [hecate-gitops](https://codeberg.org/hecate-social/hecate-gitops) - Quadlet templates + reconciler
 
 ## License
 
@@ -272,5 +272,5 @@ MIT - See [LICENSE](LICENSE)
 
 ## Support
 
-- [Issues](https://github.com/hecate-social/hecate-install/issues)
+- [Issues](https://codeberg.org/hecate-social/hecate-install/issues)
 - [Buy Me a Coffee](https://buymeacoffee.com/rgfaber)

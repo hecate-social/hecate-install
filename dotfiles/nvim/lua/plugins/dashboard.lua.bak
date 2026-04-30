@@ -1,0 +1,24 @@
+-- in your ~/.config/nvim/lua/plugins/dashboard.lua
+return {
+  -- Disable the default alpha dashboard
+  { "goolord/alpha-nvim", enabled = false },
+  -- Add your preferred alternative, for example dashboard-nvim
+  {
+    "nvimdev/dashboard-nvim",
+    event = "VimEnter",
+    config = function()
+      require("dashboard").setup({
+        -- your dashboard configuration
+        theme = "doom",
+        config = {
+          header = { "rl@arch00" },
+          center = {
+            -- your custom buttons
+          },
+          footer = { "Custom footer" },
+        },
+      })
+    end,
+    dependencies = { { "nvim-tree/nvim-web-devicons" } },
+  },
+}
