@@ -23,13 +23,14 @@ BIN_DIR="${HECATE_BIN_DIR:-$HOME/.local/bin}"
 GITOPS_DIR="${INSTALL_DIR}/gitops"
 QUADLET_DIR="${HOME}/.config/containers/systemd"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
-REPO_BASE="https://github.com/hecate-social"
+REPO_BASE="https://codeberg.org/hecate-social"
+REPO_API="https://codeberg.org/api/v1/repos/hecate-social"
 
-# Docker image (GitHub Container Registry)
+# Docker image (Codeberg Container Registry)
 #   :latest   — most recently tagged release (multi-arch); the default
 #   :main     — bleeding-edge amd64 build from the main branch
 #   :v0.16.5  — pin to a specific version (see COMPATIBILITY.md)
-HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:${HECATE_TAG:-latest}"
+HECATE_IMAGE="codeberg.org/hecate-social/hecate-daemon:${HECATE_TAG:-latest}"
 
 # Flags
 HEADLESS=false
@@ -251,9 +252,11 @@ exchange_join_code() {
 
 get_latest_release() {
     local repo="$1"
-    curl -fsSL "https://api.github.com/repos/hecate-social/${repo}/releases/latest" 2>/dev/null \
+    # Codeberg Releases API is shape-compatible with GitHub's; tag_name
+    # field is identical.
+    curl -fsSL "${REPO_API}/${repo}/releases/latest" 2>/dev/null \
         | grep '"tag_name"' \
-        | sed -E 's/.*"([^"]+)".*/\1/' || echo ""
+        | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/' || echo ""
 }
 
 download_file() {

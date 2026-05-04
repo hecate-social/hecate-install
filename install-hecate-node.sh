@@ -23,10 +23,10 @@ BIN_DIR="${HOME}/.local/bin"
 GITOPS_DIR="${INSTALL_DIR}/gitops"
 QUADLET_DIR="${HOME}/.config/containers/systemd"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
-REPO_BASE="https://github.com/hecate-social"
+REPO_BASE="https://codeberg.org/hecate-social"
 # :latest = most recently tagged release (multi-arch); default.
 # Override with HECATE_TAG=main for bleeding edge or HECATE_TAG=v0.16.5 to pin.
-HECATE_IMAGE="ghcr.io/hecate-social/hecate-daemon:${HECATE_TAG:-latest}"
+HECATE_IMAGE="codeberg.org/hecate-social/hecate-daemon:${HECATE_TAG:-latest}"
 
 JOIN_TOKEN=""
 CLUSTER_COOKIE=""
